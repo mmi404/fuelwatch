@@ -1,0 +1,8 @@
+# Internal planning documents: never tracked
+plan/
+
+# Local environment and tooling
+.env
+*.log
+.vscode/
+.claude/
