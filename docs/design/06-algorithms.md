@@ -32,7 +32,7 @@ forecast(s, f, t) = level(s, f, k) x M(s, t) x A(s, t)        with k = hour of d
 ```
 
 - **`level(s, f, k)`**: expected demand per tick in hour-of-day bin `k`, with the spike multiplier divided out. Learned from history.
-- **`M(s, t)`**: the demand multiplier at tick `t`. The current value is read from the snapshot (`demand_multiplier`); future values come from `/v1/events` (spikes with `status` `SCHEDULED` or `ACTIVE` and their `start_tick` and `end_tick`). Historical values, needed to divide spikes out of past demand, are rebuilt from the same event list, which keeps resolved events (`GET /v1/events` applies no filter, `[code]`).
+- **`M(s, t)`**: the demand multiplier at tick `t`. A spike covers `start_tick <= t <= end_tick` (the end tick is inclusive, so a duration of 4 starting at tick 5 covers ticks 5 to 9) and applies to the stations named in `station_ids`, to the stations of the regions in `region_ids`, or to every station if it names neither; spikes stack (`[live]`, injected and read back). A `station_outage` covers its ticks the same way, serves nothing, and leaves the recorded demand unchanged. The current value is read from the snapshot (`demand_multiplier`); future values come from `/v1/events` (spikes with `status` `SCHEDULED` or `ACTIVE` and their `start_tick` and `end_tick`). Historical values, needed to divide spikes out of past demand, are rebuilt from the same event list, which keeps resolved events (`GET /v1/events` applies no filter, `[code]`).
 - **`A(s, t)`**: an adaptive safety multiplier, an exponentially weighted ratio of realised to forecast demand, clipped to `[0.5, 3]`. Because `M` already follows spikes, `A` stays near 1 here; it exists to catch changes the model does not know (a differently configured simulator, an event type added later).
 
 ### Learning with a cold start
@@ -41,11 +41,11 @@ At tick 0 there is no history, and the first stockout is 65 ticks away, so the f
 
 | History available | Estimate for a bin `k` |
 |---|---|
-| None | Prior only: the profile's two-level shape (read from the simulator's source, findings section 3 item 8), scaled by the demand observed so far |
-| Some bins seen | Posterior mean `(n0 x prior + sum of observations) / (n0 + n)`, with `n0 = 8` pseudo-observations, so data takes over quickly |
+| None | Prior only: the profile's daily litres and two-level shape, read from the simulator's baseline scenario and engine (`[code]`, findings section 3 item 8), times the region factor. A profile the table does not know has no forecast until data arrives, and its assessment is `UNKNOWN` |
+| Some bins seen | Two posterior means with `n0 = 8` pseudo-observations each, `(n0 x prior + sum of observations) / (n0 + n)`: first the station and fuel's overall scale from every tick seen (this is what replaces a wrong prior within a few ticks), then each hour-of-day bin, whose prior is that scale times the profile's shape |
 | A full day (96 ticks) | Data dominates; the prior has a weight of under 10% |
 
-Pooling makes the data go further: the hour shape is shared by the three fuels of a station, so every bin sees three observations per tick. A station's shape is estimated from its total demand and split into fuels by their learned shares.
+The scale is learned per station and fuel from one observation per tick, which is enough because the shape is known and the noise is small; pooling the three fuels of a station was considered and not needed (ADR-05).
 
 Confidence is lowered while history is under one day (section 6.7), and the interface says so. The recommendation still works in that window, because the allocator targets a **cover** (hours of stock after arrival), which tolerates a rough forecast.
 
@@ -67,8 +67,10 @@ Rolling-origin evaluation on the replay: forecast 1, 4 and 8 ticks ahead at ever
 | Metric | Definition | Target |
 |---|---|---|
 | Mean absolute percentage error | mean of `abs(actual - forecast) / actual` per tick | Within 2 points of the noise floor (5% for `n = 10%`) once a day of history exists |
-| 80% interval coverage | share of realised cumulative demand inside P10 to P90 of the forecast | Between 75% and 85% |
+| 80% interval coverage | share of realised one-step demand inside the P10 to P90 band | Between 72% and 85%. The noise is uniform, which has lighter tails than the normal the band assumes: `1.28 sigma` covers 74% of a uniform, so about 74% is what a perfect model scores |
 | Baseline | Seasonal-naive (same hour yesterday) and last-value | The model must beat both after one day |
+
+Measured: on synthetic demand generated exactly like the simulator's (`[local]`, `tests/test_forecast.py`) the error is within 0.3 points of the noise floor after three days (5.3% against 5.0% for `urban_high`) and the model beats both baselines. On the live simulator over 98 ticks with nothing allocated (`[live]`) the pooled error was 5.2% and the band covered 78%; the per-series errors sit within 0.5 points of their floors. Against the first stockouts that actually happened (Tongi diesel at tick 65, Karnaphuli diesel 74, octane 76, petrol 79), the estimator's P50 and P90 were within 0 to 3 ticks from tick 0 onward, early at P90 as intended, and at tick 6 the cold start was already as good as at tick 48. The simulator's baseline constants are the prior, so the tick-0 figure shows the prior is right for this scenario, not that learning is unnecessary; a test with a different volume checks that learning takes over.
 
 ## 6.3 Stockout estimator
 

@@ -17,6 +17,7 @@ from .client import SimulatorClient
 from .db import Database
 from .config import Settings
 from .health import Mode, compute_mode
+from .intel import Intelligence
 from .poller import Poller
 from .snapshot import SnapshotStore
 from .world import WorldTracker
@@ -39,7 +40,8 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
     owns_db = db is None
     db = db or Database(settings.database_path)
     world = WorldTracker(db, client)
-    poller = Poller(client, store, settings, world)
+    intel = Intelligence(db, world)
+    poller = Poller(client, store, settings, world, intel)
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -60,6 +62,7 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
     app.state.poller = poller
     app.state.client = client
     app.state.world = world
+    app.state.intel = intel
     app.state.db = db
 
     @app.exception_handler(StarletteHTTPException)
@@ -101,6 +104,7 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
             "breakers": client.breaker_states(),
             "retries": client.retry_stats(),
             **world.info(),
+            "forecast": {**{k: v for k, v in intel.forecaster.accuracy().items() if k != "series"}, "assessed_tick": intel.assessed_tick, "error": intel.last_error},
         }
 
     @app.get("/livez")
@@ -120,7 +124,28 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
             raise HTTPException(status_code=503, detail={"code": "NO_SNAPSHOT", "message": store.last_error or "no snapshot yet"})
         return {"meta": meta(), "world": snap.model_dump(mode="json")}
 
+    @app.get("/api/risks")
+    async def api_risks() -> list[dict[str, Any]]:
+        """One row per station and fuel, most urgent first."""
+        return intel.risks()
+
+    @app.get("/api/forecast")
+    async def api_forecast(station_id: str | None = None, fuel: str | None = None, ticks: int = 24) -> list[dict[str, Any]]:
+        if not 1 <= ticks <= 96:
+            raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": "ticks must be between 1 and 96"})
+        return intel.forecast_rows(station_id, fuel, ticks)
+
     return app
 
 
-app = create_app()
+_default_app: FastAPI | None = None
+
+
+def __getattr__(name: str) -> FastAPI:
+    """`uvicorn fuelwatch.main:app` builds the app on first use, so importing the module has no side effects."""
+    global _default_app
+    if name == "app":
+        if _default_app is None:
+            _default_app = create_app()
+        return _default_app
+    raise AttributeError(name)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import TYPE_CHECKING
 
 from .client import SimulatorClient
 from .config import Settings
@@ -17,12 +18,16 @@ from .errors import SimulatorError
 from .snapshot import SnapshotStore
 from .world import WorldTracker
 
+if TYPE_CHECKING:
+    from .intel import Intelligence
+
 log = logging.getLogger("fuelwatch.poller")
 
 
 class Poller:
-    def __init__(self, client: SimulatorClient, store: SnapshotStore, settings: Settings, world: WorldTracker | None = None) -> None:
+    def __init__(self, client: SimulatorClient, store: SnapshotStore, settings: Settings, world: WorldTracker | None = None, intelligence: "Intelligence | None" = None) -> None:
         self._world = world
+        self._intel = intelligence
         self._client = client
         self._store = store
         self._settings = settings
@@ -61,6 +66,8 @@ class Poller:
                     await self._world.sync_history(snapshot)
                 except Exception:
                     log.exception("history sync failed")
+            if self._intel is not None:
+                await self._intel.update(snapshot)  # catches its own errors
             return True
         except SimulatorError as exc:
             self._store.record_failure(str(exc))
