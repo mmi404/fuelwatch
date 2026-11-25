@@ -4,6 +4,8 @@
 
 Built for the BUP CSE FEST 2026 hackathon on top of the organizer-provided BUP Fuel Supply Simulator. Python (FastAPI) backend, Next.js dashboard, Docker Compose, Prometheus and Grafana, k6.
 
+> **Status: design phase. Nothing is implemented yet.** The simulator has been explored and its behaviour documented ([findings](docs/SIMULATOR_STATUS_FINDINGS.md)), and the system has been designed in full ([docs/design](docs/design/README.md), also as a [PDF](docs/design/FuelWatch-Engineering-Design.pdf)). Everything below describes the target system. Commands, ports and file locations are intended, and every number marked TBD is not measured yet.
+
 <!-- TODO before submission: replace with a real screenshot or a 20-second GIF of the dashboard during the final_combined crisis. -->
 ![Dashboard](docs/images/dashboard.png)
 
@@ -13,7 +15,7 @@ Built for the BUP CSE FEST 2026 hackathon on top of the organizer-provided BUP F
 
 Fuel moves through a chain: import, port, depot, route, station, customer. A delayed shipment drains a depot, a demand spike empties a station, and a closed road makes a perfectly good allocation impossible. Operators have minutes to decide and little visibility.
 
-The simulator makes the stakes concrete (see the [findings](docs/SIMULATOR_STATUS_FINDINGS.md#3-key-behaviours)). **If nobody allocates anything, stations never refill: over two simulated days service level falls to 0.46 and about 100,000 litres of demand goes unserved.** The first station runs dry after roughly 16 hours. Intelligent allocation is not an add-on here; it is the only thing keeping the network supplied.
+The simulator makes the stakes concrete (see the [findings](docs/SIMULATOR_STATUS_FINDINGS.md#3-key-behaviours)). **If nobody allocates anything, stations never refill: over two simulated days service level falls to 0.46 and about 100,000 litres of demand goes unserved.** The first tank to run dry is Tongi diesel at tick 65, about 16 simulated hours in. Intelligent allocation is not an add-on here; it is the only thing keeping the network supplied.
 
 ## What FuelWatch does
 
@@ -24,8 +26,8 @@ The simulator makes the stakes concrete (see the [findings](docs/SIMULATOR_STATU
 | **Detect** | Flags anomalous demand and inventory changes, labelled *explained* (a known event) or *unexplained*. |
 | **Decide** | An optimizer proposes shipments that respect every real constraint: route limits, depot stock, dispatch capacity, destination headroom, closed routes. |
 | **Explain** | Each recommendation is a card: projected stockout, current stock, expected demand, the action, risk before and after, the signals behind it, binding constraints, alternatives (including *do nothing*), confidence. |
-| **Act** | A human approves; the platform re-validates against fresh state, then submits with an idempotent request. Full audit trail. |
-| **Survive** | Cached snapshots, budgeted retries, circuit breakers, a stalled-stream watchdog and fallbacks for every intelligent component. |
+| **Act** | A human approves an upper bound; the platform re-validates against fresh state (the quantity can only shrink), then submits with an idempotent request. An optional autopilot mode acts within guard limits. Full audit trail. |
+| **Survive** | Cached snapshots, budgeted retries, circuit breakers, detection of simulator resets, and a fallback for every intelligent component. |
 
 ```
 ALERT  Mirpur Fuel Station · Diesel
@@ -48,7 +50,7 @@ Confidence           High (forecast coverage 91%, snapshot 1 tick old)
  │ Ingest      poller + SSE watchdog + schema validation               │
  │ Snapshot    immutable WorldSnapshot, swapped atomically             │
  │ Intelligence  forecaster → stockout estimator → anomaly detector    │
- │ Decision    MIP optimizer → greedy fallback → proposal ledger       │
+ │ Decision    LP optimizer → greedy fallback → proposal ledger       │
  │ Execution   approve → idempotent POST, retry budget, breakers       │
  │ Ops         /livez /readyz /metrics · JSON logs · audit table       │
  └───────────┬─────────────────────────────────┬───────────────────────┘
@@ -57,18 +59,18 @@ Confidence           High (forecast coverage 91%, snapshot 1 tick old)
      Next.js operator dashboard        Prometheus → Grafana
 ```
 
-Four design rules, each earned from testing the simulator (full evidence in [docs/SIMULATOR_STATUS_FINDINGS.md](docs/SIMULATOR_STATUS_FINDINGS.md)):
+Four of the design rules, each earned from testing the simulator (full evidence in [docs/SIMULATOR_STATUS_FINDINGS.md](docs/SIMULATOR_STATUS_FINDINGS.md); the complete set, with architecture, data model, flows and state machines, is in [docs/design](docs/design/README.md)):
 
 1. **Browsers never touch the simulator.** It handles roughly 60 to 76 requests per second and dropped a connection under 50 concurrent clients. The dashboard reads our cache; only an approved action writes.
-2. **REST is truth, SSE is a hint.** The stream announces ticks but stays silent when a shipment departs, arrives or fails, or when a station changes. We re-read after every tick.
+2. **REST is truth, SSE is a hint.** The stream announces ticks but stays silent when a shipment departs, arrives or fails, or when a station changes. We poll REST, so a stream failure costs only latency.
 3. **A live connection is not a live stream.** A slow consumer is dropped from the broadcast while its connection stays open on keepalives, so we watch tick freshness instead.
-4. **Time is read, never assumed.** Tick length comes from the simulator at runtime.
+4. **Time is read, never assumed.** Tick length comes from the simulator at runtime, and a tick that goes backwards is treated as a world reset.
 
 ## The intelligence
 
-- **Forecast.** A structural demand model (station profile x hour-of-day x regional factor x event multiplier) fitted to the demand history, with empirical residual quantiles for the bands. Seasonal-naive sits behind it as a fallback.
+- **Forecast.** A structural demand model (hour-of-day level x active demand spike x a safety multiplier) learned online from the demand history and checked against the simulator's own generator on 1,572 observations. Bands come from the residuals, on cumulative demand. Seasonal-naive sits behind it as a fallback.
 - **Stockout estimate.** A tick-by-tick projection of inventory with scheduled supply and in-transit shipments added at their expected arrival and demand subtracted at P50 and P90.
-- **Optimizer.** A mixed-integer program that maximises served demand weighted by urgency, constrained exactly like the simulator's own validation. Solves in milliseconds at this size; falls back to a greedy allocator on timeout or failure.
+- **Optimizer.** A rolling-horizon linear program that minimises unmet litres, constrained like the simulator's own validation, committing only the first tick and re-solving each snapshot. A greedy cover-based allocator is the fallback and a benchmark policy.
 - **Foresight about failure.** The optimizer reads scheduled events and avoids routes about to be disrupted, because a shipment that departs onto a closed route fails and the fuel is not returned.
 - **Honest uncertainty.** Low-confidence recommendations are routed to human review instead of being dressed up as certain.
 
@@ -82,7 +84,7 @@ The simulator is deterministic, so every policy is tested on identical replays: 
 |---|---|---|---|---|
 | Do nothing | 0.46 (measured, 192 ticks, baseline) | ~100,000 | 0 | TBD |
 | Greedy | TBD | TBD | TBD | TBD |
-| MIP optimizer | TBD | TBD | TBD | TBD |
+| LP optimizer | TBD | TBD | TBD | TBD |
 
 Scenario for the headline run: `final_combined`: a Dhaka demand spike (x1.7 for 16 ticks), a Gazipur diesel and petrol shipment delayed 8 ticks, and the Gazipur to Mirpur route disrupted for 10 ticks.
 
@@ -91,11 +93,12 @@ Scenario for the headline run: `final_combined`: a Dhaka demand spike (x1.7 for 
 | Failure injected | What the platform does |
 |---|---|
 | Added latency | Serves from cache; the UI never waits on the simulator |
-| Random 503s | Retries only transient errors, 3 attempts with jitter, within a 10% retry budget; never retries 404, 409 or 422 |
+| Random 503s | Retries each failed request up to twice with jitter, within a retry budget; never retries 404, 409 or 422. Measured: the fault fails 24% of requests, so without retries 94% of world reads would fail |
 | Simulator unavailable | Breaker opens; dashboard keeps the last snapshot, shows its age, marks proposals provisional |
 | Stale-data signal | Detects the stale header; marks every value as stale |
-| Stream rejected or silently stalled | Watchdog reconnects, then does a full REST resync |
+| Stream rejected or silently stalled | Polling does not depend on it; a watchdog reconnects and triggers a full REST resync |
 | Malformed fields | Rejects the payload, alerts, keeps the last good snapshot |
+| Simulator reset mid-run | Detects the tick going backwards, starts a new world epoch, expires stale proposals |
 | Forecaster or optimizer down | Falls back down a documented chain; the fallback is counted and visible |
 | Traffic surge | Rate-limited API, bounded queues, cache-served reads |
 
@@ -116,6 +119,8 @@ k6 open-model tests (`constant-arrival-rate`, then `ramping-arrival-rate` to fin
 | Dashboard reads, +latency fault | TBD | TBD | TBD | TBD | TBD |
 
 ## Quick start
+
+*Target usage: not available yet.*
 
 Requirements: Docker with Compose.
 
@@ -141,7 +146,7 @@ The simulator starts paused. Press **Run** in the dashboard, or step it manually
 
 ```bash
 docker compose --profile bench up -d       # second simulator on :8001, so the demo world is untouched
-python -m bench.replay --scenario final_combined --policies none,greedy,mip
+python -m bench.replay --scenario final_combined --policies none,greedy,lp
 ```
 
 ### Reproduce the load test
@@ -166,13 +171,15 @@ python -m bench.chaos --event route_disruption --route route-gazipur-mirpur
 
 ## Repository layout
 
+Target layout; only `docs/` and `simulator/` exist so far.
+
 ```
 backend/        FastAPI service: ingest, snapshot, intelligence, decision, execution, ops
 frontend/       Next.js operator dashboard
 bench/          replay benchmark and chaos scripts
 loadtest/       k6 scripts and report template
 observability/  Prometheus rules, Grafana dashboards
-docs/           simulator findings and, later, architecture notes and images
+docs/           simulator findings, the engineering design (docs/design) and, later, images
 simulator/      Compose file for the provided simulator
 ```
 
@@ -180,7 +187,8 @@ simulator/      Compose file for the provided simulator
 
 | Document | What it covers |
 |---|---|
-| [docs/SIMULATOR_STATUS_FINDINGS.md](docs/SIMULATOR_STATUS_FINDINGS.md) | Verified behaviour of the simulator: spec conflicts resolved, the world, allocation lifecycle and validation order, faults, events, SSE limits, determinism and capacity, open questions. The design rules above come from it. |
+| [docs/SIMULATOR_STATUS_FINDINGS.md](docs/SIMULATOR_STATUS_FINDINGS.md) | Verified behaviour of the simulator: spec conflicts resolved, the world and its demand model, allocation lifecycle and validation order, faults (with measured error rate), events, SSE limits, determinism and capacity, open questions. The design rules come from it. |
+| [docs/design/README.md](docs/design/README.md) | The engineering design, in ten parts: requirements, architecture, data model (ER and class diagrams), flows (sequence and activity diagrams), state machines, algorithms, API contracts, resilience and observability, a decision log with alternatives and evidence, and risks with the build order. Also as a single [PDF](docs/design/FuelWatch-Engineering-Design.pdf). |
 
 ## Honest limitations
 
@@ -191,4 +199,4 @@ simulator/      Compose file for the provided simulator
 
 ## Tech stack
 
-Python 3.12 · FastAPI · httpx · Pydantic · SQLite · OR-Tools / PuLP · Next.js · TypeScript · Tailwind · Docker Compose · Prometheus · Grafana · k6 · GitHub Actions
+Python 3.12 · FastAPI · httpx · Pydantic · SQLite · SciPy (HiGHS) · Next.js · TypeScript · Tailwind · Docker Compose · Prometheus · Grafana · k6 · GitHub Actions

@@ -6,12 +6,12 @@ The simulator for local runs is defined in [`simulator/docker-compose.yml`](../s
 
 **Status vocabulary used below**
 
-- **Answered**: we tested it and know the behaviour. This does *not* mean the simulator was fixed; a limitation can be answered and still exist.
-- **Open**: not yet verified or not yet used by our app.
+- **Checked**: verified by testing the running simulator or reading its source. A checked limitation (for example a cosmetic event) is still a limitation of the simulator; checked only means we have confirmed it.
+- **Open**: not yet verified, or not yet taken into the design.
 
-Contents: [1 Spec conflicts](#1-spec-conflicts-answered) · [2 The world](#2-the-world-baseline-seed-12345) · [3 Key behaviours](#3-key-behaviours) · [4 Lifecycle and validation](#4-allocation-lifecycle-and-validation) · [5 Faults and events](#5-faults-and-events) · [6 SSE](#6-sse-is-thinner-than-the-guide-implies) · [7 Capacity and determinism](#7-capacity-and-determinism) · [8 Gap status](#8-gap-status) · [9 Implications](#9-implications-for-the-design)
+Contents: [1 Spec conflicts](#1-spec-conflicts-checked) · [2 The world](#2-the-world-baseline-seed-12345) · [3 Key behaviours](#3-key-behaviours) · [4 Lifecycle and validation](#4-allocation-lifecycle-and-validation) · [5 Faults and events](#5-faults-and-events) · [6 SSE](#6-sse-is-thinner-than-the-guide-implies) · [7 Capacity and determinism](#7-capacity-and-determinism) · [8 Gap status](#8-gap-status) · [9 Implications](#9-implications-for-the-design)
 
-## 1. Spec conflicts (answered)
+## 1. Spec conflicts (checked)
 
 | Conflict | Verdict (evidence) |
 |---|---|
@@ -35,13 +35,30 @@ Two surprises:
 
 ## 3. Key behaviours
 
-1. **Stations never refill on their own.** With zero allocations, service level falls to **0.46 over 192 ticks** (about 100k L unmet). The first unmet demand appears around tick 63 to 67 (about 16 simulated hours), at Cox's Bazar. The platform is needed from the start, not only during crises.
+1. **Stations never refill on their own.** With zero allocations, service level falls to **0.46 over 192 ticks** (about 100k L unmet). The first unmet demand is **Tongi diesel at tick 65** (about 16 simulated hours), then Karnaphuli diesel at 74, octane at 76 and petrol at 79 (re-measured on a fresh run of 131 ticks with no allocations; an earlier note naming Cox's Bazar as first was wrong). The platform is needed from the start, not only during crises.
 2. **Crisis events barely change the unmanaged baseline.** A `final_combined`-style run scored 0.45 against 0.46. The baseline is already stressed, so the intelligence must run continuously.
 3. **Idempotency.** Same key and body returns 201 with the existing record. Same key with a different body returns 409 `IDEMPOTENCY_KEY_MISMATCH` and the key stays bound to the first body. **A validation 409 does not consume the key**: `ROUTE_CAPACITY_EXCEEDED` on key `k2`, then `k2` reused successfully.
 4. **Two error shapes.** Validation errors are `409 {detail:{code,message}}`, schema errors are `422`. Injected faults are `503 {"error":{"code":"FAULT_INJECTED",...}}`. The client must parse both.
 5. **Image ships 4 scenarios** in `/app/scenarios/`: `baseline` (active), `demand_spike`, `supply_disruption`, `final_combined` (seed 9001: Dhaka spike 1.7x for 16 ticks from tick 8, Gazipur diesel and petrol delayed 8 ticks at tick 10, `route-gazipur-mirpur` disrupted ticks 14 to 24). The scenario cannot be switched at runtime, so we **replay `final_combined` events through `/admin/events`**.
 6. **Extra endpoints beyond the guide:** `GET /v1/depots/{id}`, `GET /v1/stations/{id}`, `GET /admin/stats`.
 7. **`/v1/demand-history`** is a full per-tick, per-station, per-fuel record with `demand`, `served` and `unmet` litres. It is the forecaster's training data. `limit` is not capped at 2000 (5000 returned 200); the full history is 12 rows per tick.
+
+8. **The demand generator is known and checked.** Read from the image source and then validated live: for 1,572 demand-history rows (131 ticks, no allocations) every value lay inside the predicted band and the largest deviation was 12%, which is the highway station's noise setting. The model is `demand = daily_liters / 96 x hour_factor(profile, hour) x region_factor x station_multiplier x (1 + U(-noise, +noise))`, with the noise seeded by (seed, tick, station, fuel).
+
+   | Profile | Hours with the high factor | High | Low | Noise | Daily litres (diesel / petrol / octane) |
+   |---|---|---|---|---|---|
+   | `urban_high` (Mirpur) | 7 to 10 and 16 to 21 | 1.45 | 0.70 | 10% | 8,500 / 10,500 / 5,600 |
+   | `industrial` (Tongi) | 6 to 18 | 1.55 | 0.45 | 8% | 14,000 / 4,500 / 2,200 |
+   | `highway` (Karnaphuli) | 6 to 10 and 16 to 21 | 1.35 | 0.75 | 12% | 10,500 / 11,000 / 6,200 |
+   | `regional` (Cox's Bazar) | 7 to 21 | 1.25 | 0.65 | 10% | 7,200 / 7,600 / 3,600 |
+
+   The hour is `(tick x tick_minutes / 60) mod 24`, with tick 0 at 00:00. A step function by hour means the average daily factor is below 1 (Mirpur 0.95), so a "daily" figure is not the real daily volume.
+9. **Simulator state survives a container restart.** After `docker restart` the simulator came back at the tick it had before (85), paused. Only `POST /admin/reset` returns it to tick 0. Always reset before a benchmark or demo.
+10. **`POST /admin/step` advances exactly one tick** and ignores query parameters (`?ticks=2` still moved one tick).
+11. **Observed status values** (from source and live): depot `OPEN`, `CONSTRAINED`; station `OPEN`, `OUTAGE`; route `AVAILABLE`, `DISRUPTED`; supply arrival `SCHEDULED`, `DELAYED`, `ARRIVED`; event `SCHEDULED`, `ACTIVE`, `RESOLVED`; instance `PAUSED`, `RUNNING`. A `shipment_delay` moves a supply arrival's `planned_tick` and marks it `DELAYED`. An event created through `POST /admin/events` takes `start_tick` and `duration_ticks`; the stored `end_tick` is their sum.
+12. **`/v1/demand-history` returns newest first**, default `limit` 200, filterable by `station_id`.
+13. **Event effects in detail** (`[code]`, `engine.py`): a `demand_spike` multiplies the station's visible `demand_multiplier` when it starts and divides it back when it ends (spikes stack), so the multiplier in `/v1/stations` always shows the current spike. `shipment_delay` and `supply_shortfall` change undelivered supply arrivals once, when they start, and are **not undone** when the event ends. A route is checked at departure only, so a disruption after departure does not fail an allocation already on the road.
+14. **Supply into a full depot is lost.** A depot accepts `min(room, quantity)` when a scheduled delivery lands, so a depot at capacity wastes the rest.
 
 ## 4. Allocation lifecycle and validation
 
@@ -63,7 +80,7 @@ Two surprises:
 | Fault | Behaviour |
 |---|---|
 | `latency` | Param `delay_ms`, default 500 (UI hint says 1000). Measured about 0.53 s per request. |
-| `error_rate` | Param `rate`, default 0.25 in code (UI hint says 0.3). Returns 503. Probabilistic; with `{}` params our six samples did not hit it. |
+| `error_rate` | Param `rate`, default 0.25 in code (UI hint says 0.3). Returns 503 with `{"error":{"code":"FAULT_INJECTED",...}}`. **Measured on 1,800 requests: 431 failed (23.9%), independently** (two failures in a row 6.2%, expected 6.5%). Because it hits every `/v1/*` request independently, a 10-request refresh fails 97% of the time without retries. |
 | `stale_data` | Adds header `X-Simulator-Stale: true`. **The data itself is not stale**, so the header is the only signal. |
 | `unavailable` | All `/v1/*` return 503, including POST allocations. |
 | `stream_disconnect` | Rejects only **new** `/v1/stream` connections (503 `{detail:{code:FAULT_INJECTED}}`). An already-open stream stays open. The body shape differs from the REST fault shape. |
@@ -91,13 +108,13 @@ Two surprises:
 
 | Item | Status | Meaning |
 |---|---|---|
-| Allocation lifecycle | Answered | PENDING, IN_TRANSIT, ARRIVED, FAILED, CANCELLED |
-| `depot_constraint` | Answered | Cosmetic, blocks nothing. A simulator limitation that remains. |
-| `station_outage` | Answered | Functional; our allocator must avoid closed stations. |
-| Dispatch cap | Answered | Per-tick, same-tick allocations only. |
-| `stream_disconnect` | Answered | New connections only. |
-| Scheduled future events (`/v1/events`) | **Open for our app** | Listing shape known (id, type, start_tick, end_tick, status, parameters). Our app does not read it yet; it is the early-warning signal for route disruptions. |
-| `error_rate` exact behaviour | **Open** | Probabilistic 503s at `rate`; not statistically verified. |
+| Allocation lifecycle | Checked | PENDING, IN_TRANSIT, ARRIVED, FAILED, CANCELLED |
+| `depot_constraint` | Checked | Cosmetic, blocks nothing. A simulator limitation that remains. |
+| `station_outage` | Checked | Functional; our allocator must avoid closed stations. |
+| Dispatch cap | Checked | Per-tick, same-tick allocations only. |
+| `stream_disconnect` | Checked | New connections only. |
+| Scheduled future events (`/v1/events`) | **Open** | Listing shape known (id, type, start_tick, end_tick, status, parameters). The design uses it as the early-warning signal for route disruptions. |
+| `error_rate` exact behaviour | Checked | 23.9% of 1,800 requests failed at the default rate 0.25, independently. |
 | 50-way concurrent reset | **Open** | Cause not isolated. Only matters if the simulator is load-tested directly, which our design avoids. |
 | Which speed and tick the judges run | **Open** | App reads `tick_minutes` at runtime to stay safe. |
 
@@ -105,8 +122,10 @@ No forecast, risk or recommendation data exists anywhere in the simulator, so al
 
 ## 9. Implications for the design
 
-1. Run the recommender **continuously**, not only on events; Cox's Bazar runs dry around tick 65 with no action.
+1. Run the recommender **continuously**, not only on events; Tongi diesel runs dry at tick 65 with no action.
 2. Keep human approval meaningful: pause or step the simulation, or re-validate against fresh state at execution.
 3. Primary test harness: replay `final_combined` deterministically (reset, inject, step) and score `service_level` against the no-action baseline.
 4. Build the client against the real error shapes, the `X-Simulator-Stale` header, and SSE as a hint only.
 5. Pin `SIMULATION_SPEED=8` and `TICK_MINUTES=15` in our compose, but read `tick_minutes` from `/v1/instance` at runtime.
+6. Treat a tick that goes **backwards**, or a changed scenario or seed, as a world reset: discard cached demand history and open proposals.
+7. Design detail for all of the above is in [design/README.md](design/README.md).
