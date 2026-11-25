@@ -13,7 +13,7 @@ Built for the BUP CSE FEST 2026 hackathon on top of the organizer-provided BUP F
 
 Fuel moves through a chain: import, port, depot, route, station, customer. A delayed shipment drains a depot, a demand spike empties a station, and a closed road makes a perfectly good allocation impossible. Operators have minutes to decide and little visibility.
 
-The simulator makes the stakes concrete. **If nobody allocates anything, stations never refill: over two simulated days service level falls to 0.46 and about 100,000 litres of demand goes unserved.** The first station runs dry after roughly 16 hours. Intelligent allocation is not an add-on here; it is the only thing keeping the network supplied.
+The simulator makes the stakes concrete (see the [findings](docs/SIMULATOR_STATUS_FINDINGS.md#3-key-behaviours)). **If nobody allocates anything, stations never refill: over two simulated days service level falls to 0.46 and about 100,000 litres of demand goes unserved.** The first station runs dry after roughly 16 hours. Intelligent allocation is not an add-on here; it is the only thing keeping the network supplied.
 
 ## What FuelWatch does
 
@@ -57,7 +57,7 @@ Confidence           High (forecast coverage 91%, snapshot 1 tick old)
      Next.js operator dashboard        Prometheus → Grafana
 ```
 
-Four design rules, each earned from testing the simulator:
+Four design rules, each earned from testing the simulator (full evidence in [docs/SIMULATOR_STATUS_FINDINGS.md](docs/SIMULATOR_STATUS_FINDINGS.md)):
 
 1. **Browsers never touch the simulator.** It handles roughly 60 to 76 requests per second and dropped a connection under 50 concurrent clients. The dashboard reads our cache; only an approved action writes.
 2. **REST is truth, SSE is a hint.** The stream announces ticks but stays silent when a shipment departs, arrives or fails, or when a station changes. We re-read after every tick.
@@ -172,8 +172,15 @@ frontend/       Next.js operator dashboard
 bench/          replay benchmark and chaos scripts
 loadtest/       k6 scripts and report template
 observability/  Prometheus rules, Grafana dashboards
-docs/           architecture notes and simulator findings
+docs/           simulator findings and, later, architecture notes and images
+simulator/      Compose file for the provided simulator
 ```
+
+## Documentation
+
+| Document | What it covers |
+|---|---|
+| [docs/SIMULATOR_STATUS_FINDINGS.md](docs/SIMULATOR_STATUS_FINDINGS.md) | Verified behaviour of the simulator: spec conflicts resolved, the world, allocation lifecycle and validation order, faults, events, SSE limits, determinism and capacity, open questions. The design rules above come from it. |
 
 ## Honest limitations
 
