@@ -132,19 +132,30 @@ Simple, explainable, and robust to a rough forecast.
 
 ```
 1. For every (s, f) compute the projection (6.3) and its P90 stockout tick.
-2. Sort by hours_p90 ascending (most urgent first).
-3. For each (s, f) with level != OK:
-     arrival = T + tau of the best usable route
-     target  = P75 cumulative demand over (arrival - T) + cover ticks   # cover = 24 ticks initially
-     need    = target - (projected inventory at arrival, with inbound)
-     need    = min(need, cap - projected inventory at arrival)          # no loss
-     if need < min_shipment: skip
-4. Choose among usable routes into s (rules 1-4): shortest transit first,
-   ties to the depot with more stock of f.
-5. quantity = min(need, m_r, depot stock - reserve, dispatch capacity left at the depot)
-6. If quantity < need and another route exists, send the remainder there.
-7. Record which constraint limited each shipment (binding constraint) for the explanation.
+2. Sort by hours_p90 ascending (most urgent first). Skip OK pairs, UNKNOWN pairs (no forecast) and
+   stations in outage.
+3. For each remaining (s, f), and for the route being tried (arrival = T + tau):
+     I75      = projected stock at arrival on the P75 demand path, with fuel already on the road
+     I25      = the same on the P25 demand path (more stock left, so less headroom)
+     D75      = P75 demand over the cover window after arrival (cover = 24 ticks initially)
+     need     = D75 - I75 - inbound arriving inside the window
+     need     = min(need, cap - I25)                       # headroom: never more than fits
+     floor    = min(min_shipment, half of D75)             # slow fuels: cover can be < min_shipment
+     if need < floor: the pair is covered
+4. Routes: only usable ones (rules 1-4), shortest transit first, ties to the depot with more stock of f.
+5. quantity = whole litres of min(need, m_r, depot stock - reserve, dispatch capacity left at the depot).
+   Dispatch left already subtracts allocations created this tick that the snapshot shows.
+6. Place the shipment, then recompute the need (the shipment is now inbound) and repeat, moving to
+   another route when a depot cannot serve it, up to 6 lines per pair.
+7. Record which constraint limited each shipment (need, route_max, depot_stock, dispatch_capacity or
+   headroom) and, when a need goes unmet, the shortfall and its reason, for the explanation.
 ```
+
+The P25 and P75 paths come from the same cumulative quantiles as the stockout estimator, taken at `+/- 0.6745` standard deviations. Using the low-demand path for headroom and the high-demand path for need is what makes overflow impossible without being timid about stock. The first version used a flat 1,000 L minimum shipment and left slow-moving pairs (Tongi octane at about 35 L per tick, whose whole cover is 840 L) dry for up to 43 ticks; the relative floor fixed that.
+
+Rule 4 in practice: a POST at tick `T` departs in the processing of tick `T`, so only a disruption covering tick `T` can fail it (end tick inclusive); one that starts later cannot, because the route is checked at departure only.
+
+Measured on the live simulator, driving the allocator every tick for 192 ticks and posting its shipments (`[live]`): with no events, 128 shipments and 113,848 L gave a service level of 1.000 (no action gives 0.46), with every POST accepted, no `FAILED` allocation and no litres lost at arrival (checked by conservation of stock, served and delivered litres). With the `final_combined` events replayed (a 1.7 times spike in Dhaka, an 8-tick Gazipur supply delay, a 10-tick disruption of `route-gazipur-mirpur`) the result was the same: 130 shipments, service level 1.000, no rejections, no failures, no loss. These runs are one seed, one scenario and no faults; the replay benchmark with fault injection and the LP policy is where the comparison is made properly.
 
 ### Policy 2: rolling-horizon linear programme (the main policy)
 

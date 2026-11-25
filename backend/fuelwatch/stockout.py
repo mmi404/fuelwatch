@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from .forecast import Cumulative, DemandForecaster
+from .forecast import Z90, Cumulative, DemandForecaster
 from .models import AllocationStatus, EventType, Station
 from .snapshot import WorldSnapshot
 
@@ -44,13 +44,48 @@ def _phi(x: float) -> float:
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
 
 
-def _increments(cumulative: list[Cumulative], quantile_90: bool) -> list[float]:
-    values = [c.p90 if quantile_90 else c.mean for c in cumulative]
+def increments(cumulative: list[Cumulative], z: float) -> list[float]:
+    """Per-tick demand along the path where cumulative demand is `mean + z x sd` (z = 0 is the mean path)."""
     out, previous = [], 0.0
-    for v in values:
+    for c in cumulative:
+        v = c.mean + z * c.sd
         out.append(max(0.0, v - previous))
         previous = max(previous, v)
     return out
+
+
+def inbound_by_tick(snapshot: WorldSnapshot, station_id: str, fuel) -> dict[int, float]:
+    """Litres already on the road to a station and fuel, by arrival tick.
+
+    An IN_TRANSIT allocation arrives at its expected_arrival_tick; a PENDING one has not departed
+    yet and arrives at created_tick + the route's transit time.
+    """
+    route_ticks = {r.id: r.transit_ticks for r in snapshot.routes}
+    arrivals: dict[int, float] = {}
+    for a in snapshot.allocations:
+        if a.status in _ON_THE_ROAD and a.destination_station_id == station_id and a.fuel_type == fuel:
+            eta = a.expected_arrival_tick if a.expected_arrival_tick is not None else a.created_tick + route_ticks.get(a.route_id, 0)
+            tick = max(snapshot.tick, eta)
+            arrivals[tick] = arrivals.get(tick, 0.0) + a.quantity
+    return arrivals
+
+
+def inventory_at(inventory: float, capacity: float, arrivals: dict[int, float], demand: list[float], start_tick: int, until_tick: int, closed: set[int]) -> float:
+    """Stock in the tank at `until_tick` after that tick's arrivals and before its demand.
+
+    Same order as `project`: each tick adds arrivals (the part that does not fit is lost), then serves demand.
+    """
+    stock = inventory
+    for i, d in enumerate(demand):
+        t = start_tick + i
+        if t >= until_tick:
+            break
+        stock += min(max(0.0, capacity - stock), arrivals.get(t, 0.0))
+        if t not in closed:
+            stock -= min(stock, d)
+    if until_tick >= start_tick:
+        stock += min(max(0.0, capacity - stock), arrivals.get(until_tick, 0.0))
+    return stock
 
 
 def project(inventory: float, capacity: float, arrivals: dict[int, float], demand: list[float], start_tick: int, closed: set[int]) -> int | None:
@@ -89,12 +124,11 @@ def assess(snapshot: WorldSnapshot, forecaster: DemandForecaster, horizon: int =
     routes_by_station: dict[str, list] = {}
     for r in snapshot.routes:
         routes_by_station.setdefault(r.destination_station_id, []).append(r)
-    route_ticks = {r.id: r.transit_ticks for r in snapshot.routes}
     day_ticks = 1440 // tm
     out: list[Assessment] = []
 
     for station in snapshot.stations:
-        closed = _outage_ticks(station, snapshot, T, horizon)
+        closed = outage_ticks(station, snapshot, T, horizon)
         routes = routes_by_station.get(station.id, [])
         usable = [r.transit_ticks for r in routes if r.status.value == "AVAILABLE"] or [r.transit_ticks for r in routes]
         best_route = min(usable) if usable else None
@@ -105,11 +139,7 @@ def assess(snapshot: WorldSnapshot, forecaster: DemandForecaster, horizon: int =
             forecaster.prime(station, f, snapshot.regions)
             inventory = float(station.inventory.get(fuel, 0.0))
             capacity = float(station.capacity.get(fuel, 0.0))
-            arrivals: dict[int, float] = {}
-            for a in snapshot.allocations:
-                if a.status in _ON_THE_ROAD and a.destination_station_id == station.id and a.fuel_type == fuel:
-                    eta = a.expected_arrival_tick if a.expected_arrival_tick is not None else a.created_tick + route_ticks.get(a.route_id, 0)
-                    arrivals[max(T, eta)] = arrivals.get(max(T, eta), 0.0) + a.quantity
+            arrivals = inbound_by_tick(snapshot, station.id, fuel)
             inbound = sum(arrivals.values())
             observations = forecaster.observations(station.id, f)
             confidence = "prior" if observations == 0 else "low" if observations < day_ticks else "normal"
@@ -120,7 +150,7 @@ def assess(snapshot: WorldSnapshot, forecaster: DemandForecaster, horizon: int =
                 continue
 
             def stockout(q90: bool) -> int | None:
-                path = _increments(cumulative, q90)
+                path = increments(cumulative, Z90 if q90 else 0.0)
                 return project(inventory, capacity, arrivals, path, T, closed)
 
             t50, t90 = stockout(False), stockout(True)
@@ -138,7 +168,7 @@ def assess(snapshot: WorldSnapshot, forecaster: DemandForecaster, horizon: int =
     return out
 
 
-def _outage_ticks(station: Station, snapshot: WorldSnapshot, start: int, horizon: int) -> set[int]:
+def outage_ticks(station: Station, snapshot: WorldSnapshot, start: int, horizon: int) -> set[int]:
     """Ticks in the horizon during which the station serves nothing (a station_outage covering it, inclusive)."""
     closed: set[int] = set()
     for e in snapshot.events:
