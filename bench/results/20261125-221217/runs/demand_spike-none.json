@@ -1,0 +1,19 @@
+{
+ "scenario": "demand_spike",
+ "policy": "none",
+ "ticks": 192,
+ "service_level": 0.4539,
+ "unmet_liters": 103332.9,
+ "served_liters": 85900.0,
+ "simulator_allocation_failures": 0,
+ "shipments_posted": 0,
+ "litres_shipped": 0.0,
+ "posts_rejected": {},
+ "litres_lost_at_arrival": 0.0,
+ "stockout_pair_hours": 299.25,
+ "decision_ms_mean": 6.78,
+ "decision_ms_p95": 9.81,
+ "history_hash": "b33507334d94e0c9fddb321786621214996cef07304f4b21c48c21337a43df57",
+ "wall_seconds": 48.2,
+ "allocations": []
+}

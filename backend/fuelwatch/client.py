@@ -261,9 +261,10 @@ class SimulatorClient:
 
     # -- demo controls and the tick stream --------------------------------------------------
 
-    async def admin_command(self, name: str) -> dict[str, Any]:
-        """Run, pause, step or reset the simulator. One attempt: admin calls bypass injected faults and are not idempotent."""
-        data, _ = await self._send_once("POST", f"/admin/{name}")
+    async def admin_command(self, name: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Run, pause, step, reset, add an event (`events`) or clear faults (`faults/clear`). One attempt:
+        admin calls bypass injected faults and are not idempotent."""
+        data, _ = await self._send_once("POST", f"/admin/{name}", **({"json": body} if body is not None else {}))
         return data if isinstance(data, dict) else {"result": data}
 
     async def stream_events(self, read_timeout: float = 30.0) -> AsyncIterator[tuple[str, dict[str, Any]]]:

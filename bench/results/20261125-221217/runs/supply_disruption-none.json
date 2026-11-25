@@ -1,0 +1,19 @@
+{
+ "scenario": "supply_disruption",
+ "policy": "none",
+ "ticks": 192,
+ "service_level": 0.461,
+ "unmet_liters": 100452.1,
+ "served_liters": 85900.0,
+ "simulator_allocation_failures": 0,
+ "shipments_posted": 0,
+ "litres_shipped": 0.0,
+ "posts_rejected": {},
+ "litres_lost_at_arrival": 0.0,
+ "stockout_pair_hours": 291.5,
+ "decision_ms_mean": 6.51,
+ "decision_ms_p95": 7.83,
+ "history_hash": "fad8235273faebf2cbecc9c62e1c6bebd1fb6ac70a839be65faf32ffd4a52c63",
+ "wall_seconds": 47.5,
+ "allocations": []
+}

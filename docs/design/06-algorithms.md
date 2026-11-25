@@ -267,3 +267,20 @@ The simulator is deterministic, so the same crisis can be given to every policy.
 | Fairness | Same replay, same seed, same horizon, a freshly reset simulator for every policy |
 
 Reference point already measured: with no actions, service level is 0.46 on the baseline. The benchmark's job is to show how far each policy rises above it, and where it still loses fuel.
+
+### Measured results
+
+The runner is `python -m fuelwatch.bench` (`backend/fuelwatch/bench.py`). It refuses to reset the simulator on port 8000, so it runs on a second instance on port 8001 started from the same image. Each run begins with fault clearing, a pause and a reset, replays the scenario events through `/admin/events` (taken from the simulator's own scenario files), and then for every tick reads the world through the live client, trains the forecaster on the newest complete history ticks the way the live system does, asks the policy for shipments, posts them with their own keys, and steps. The runner currently supports the policies `none` and `greedy`. The saved output (`bench/results/20261125-221217/`, with every run's raw allocations and history hash) was produced on commit 3f54ab0 plus the runner, with horizon 192 ticks and seed 12345:
+
+| Scenario | Policy | Service level | Unmet L | Shipments | Litres shipped | Rejected POSTs | Failed allocations | Lost at arrival L | Stockout pair-hours | Decision p95 ms |
+|---|---|---|---|---|---|---|---|---|---|---|
+| baseline | none | 0.461 | 100,452 | 0 | 0 | 0 | 0 | 0 | 291.5 | 8.54 |
+| baseline | greedy | 1.000 | 0 | 128 | 113,848 | 0 | 0 | 0 | 0 | 9.58 |
+| demand_spike | none | 0.454 | 103,333 | 0 | 0 | 0 | 0 | 0 | 299.25 | 9.81 |
+| demand_spike | greedy | 1.000 | 0 | 130 | 115,758 | 0 | 0 | 0 | 0 | 10.15 |
+| supply_disruption | none | 0.461 | 100,452 | 0 | 0 | 0 | 0 | 0 | 291.5 | 7.83 |
+| supply_disruption | greedy | 1.000 | 0 | 128 | 113,848 | 0 | 0 | 0 | 0 | 9.22 |
+| final_combined | none | 0.453 | 103,916 | 0 | 0 | 0 | 0 | 0 | 300.25 | 10.19 |
+| final_combined | greedy | 1.000 | 0 | 130 | 116,043 | 0 | 0 | 0 | 0 | 14.68 |
+
+A second run of `final_combined` with `greedy` produced the identical demand-history hash and service level. Three things limit what this shows. The runs have no injected faults, so they say nothing about resilience; they are one seed; and the scenarios are gentle for a policy that has full information at every tick, since depots start with plenty of stock and no station is far from one. The `supply_disruption` scenario changes nothing for either policy because the delayed and reduced depot deliveries never mattered while depot stock stayed high. A harder comparison (smaller depot stock, longer horizons, faults and several seeds) is where `lp` has a chance to show a difference, and where greedy may lose fuel.
