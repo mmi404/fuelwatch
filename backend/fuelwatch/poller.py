@@ -15,12 +15,14 @@ from .client import SimulatorClient
 from .config import Settings
 from .errors import SimulatorError
 from .snapshot import SnapshotStore
+from .world import WorldTracker
 
 log = logging.getLogger("fuelwatch.poller")
 
 
 class Poller:
-    def __init__(self, client: SimulatorClient, store: SnapshotStore, settings: Settings) -> None:
+    def __init__(self, client: SimulatorClient, store: SnapshotStore, settings: Settings, world: WorldTracker | None = None) -> None:
+        self._world = world
         self._client = client
         self._store = store
         self._settings = settings
@@ -46,8 +48,19 @@ class Poller:
             if not needs_refresh:
                 return False
             snapshot = await self._client.read_world()
+            if self._world is not None:
+                # Reset detection comes before publishing so nobody sees a new world under the old epoch.
+                try:
+                    self._world.observe(snapshot)
+                except Exception:  # a failing database must not blind the dashboard
+                    log.exception("epoch check failed")
             self._store.publish(snapshot)
             self._force_refresh = False
+            if self._world is not None:
+                try:
+                    await self._world.sync_history(snapshot)
+                except Exception:
+                    log.exception("history sync failed")
             return True
         except SimulatorError as exc:
             self._store.record_failure(str(exc))

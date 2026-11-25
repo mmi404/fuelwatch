@@ -72,7 +72,7 @@ The table is generated from the simulator's OpenAPI document so it cannot drift 
 | GET | `/v1/allocations` | none | Poller, executor | Source of in-transit fuel and of reconciliation by idempotency key. |
 | POST | `/v1/allocations` | body `AllocationCreate` | Executor, bench | The only write we make. Idempotent by key; a validation 409 does not consume the key. |
 | POST | `/v1/allocations/{allocation_id}/cancel` | `allocation_id` (path, integer, required) | Executor | Only valid while `PENDING`; refunds the depot. |
-| GET | `/v1/demand-history` | `station_id` (query, string); `limit` (query, integer) | History sync, bench | Newest first, default limit 200, not capped. Forecaster training data. |
+| GET | `/v1/demand-history` | `station_id` (query, string); `limit` (query, integer) | History sync, bench | Newest first, default limit 200, one response capped at 2,000 rows (166 ticks), `station_id` filtered reads are separate. Forecaster training data. |
 | GET | `/v1/depots` | none | Poller | Stock, capacity, dispatch capacity, status. |
 | GET | `/v1/depots/{entity_id}` | `entity_id` (path, string, required) | Not used | The list already holds the same data. |
 | GET | `/v1/events` | none | Poller | Early warning: scheduled and active events, including future ones. |

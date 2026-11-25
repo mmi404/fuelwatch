@@ -1,0 +1,176 @@
+"""SQLite persistence (design part 3.3): world epochs and demand history.
+
+SQLite in WAL mode, one connection guarded by a lock so it can be used from the
+event loop and from worker threads. Everything is keyed by a world epoch so tick
+numbers from different worlds never mix. Only what must outlive a restart is kept
+here; the snapshot and forecasts are rebuilt from the simulator.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+import threading
+from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+from .models import DemandRecord
+
+SCHEMA_VERSION = 1
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS world_epoch (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    instance_id INTEGER NOT NULL,
+    scenario_id TEXT NOT NULL,
+    scenario_version TEXT NOT NULL,
+    seed INTEGER NOT NULL,
+    tick_minutes INTEGER NOT NULL,
+    last_tick INTEGER NOT NULL,
+    last_allocation_count INTEGER NOT NULL,
+    last_served_liters REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS demand_history (
+    epoch_id INTEGER NOT NULL REFERENCES world_epoch(id),
+    station_id TEXT NOT NULL,
+    fuel_type TEXT NOT NULL,
+    tick INTEGER NOT NULL,
+    demand REAL NOT NULL,
+    served REAL NOT NULL,
+    unmet REAL NOT NULL,
+    PRIMARY KEY (epoch_id, station_id, fuel_type, tick)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS demand_history_by_tick ON demand_history (epoch_id, tick);
+"""
+
+
+@dataclass(frozen=True)
+class EpochRow:
+    """A world epoch and the last thing we observed in it (used to spot a reset)."""
+
+    id: int
+    started_at: str
+    reason: str
+    instance_id: int
+    scenario_id: str
+    scenario_version: str
+    seed: int
+    tick_minutes: int
+    last_tick: int
+    last_allocation_count: int
+    last_served_liters: float
+
+
+_EPOCH_COLUMNS = (
+    "id, started_at, reason, instance_id, scenario_id, scenario_version, seed, tick_minutes, "
+    "last_tick, last_allocation_count, last_served_liters"
+)
+
+
+class Database:
+    def __init__(self, path: str = ":memory:") -> None:
+        if path != ":memory:":
+            Path(path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
+        self._conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
+        self._conn.row_factory = sqlite3.Row
+        with self._lock:
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+            self._conn.execute("PRAGMA foreign_keys=ON")
+            self._migrate()
+
+    def _migrate(self) -> None:
+        version = self._conn.execute("PRAGMA user_version").fetchone()[0]
+        if version > SCHEMA_VERSION:
+            raise RuntimeError(f"database schema {version} is newer than this build ({SCHEMA_VERSION})")
+        self._conn.executescript(_SCHEMA)
+        self._conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
+
+    # -- epochs ----------------------------------------------------------------------
+
+    def latest_epoch(self) -> EpochRow | None:
+        with self._lock:
+            row = self._conn.execute(f"SELECT {_EPOCH_COLUMNS} FROM world_epoch ORDER BY id DESC LIMIT 1").fetchone()
+        return EpochRow(**dict(row)) if row else None
+
+    def insert_epoch(self, *, reason: str, instance_id: int, scenario_id: str, scenario_version: str, seed: int, tick_minutes: int, tick: int, allocation_count: int, served_liters: float) -> EpochRow:
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO world_epoch (started_at, reason, instance_id, scenario_id, scenario_version, seed, tick_minutes,"
+                " last_tick, last_allocation_count, last_served_liters) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (datetime.now(UTC).isoformat(), reason, instance_id, scenario_id, scenario_version, seed, tick_minutes, tick, allocation_count, served_liters),
+            )
+            row = self._conn.execute(f"SELECT {_EPOCH_COLUMNS} FROM world_epoch WHERE id=?", (cur.lastrowid,)).fetchone()
+        return EpochRow(**dict(row))
+
+    def update_epoch_observation(self, epoch_id: int, *, tick: int, allocation_count: int, served_liters: float) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE world_epoch SET last_tick=?, last_allocation_count=?, last_served_liters=? WHERE id=?",
+                (tick, allocation_count, served_liters, epoch_id),
+            )
+
+    # -- demand history ----------------------------------------------------------------
+
+    def upsert_demand(self, epoch_id: int, records: Iterable[DemandRecord]) -> int:
+        rows = [(epoch_id, r.station_id, r.fuel_type.value, r.tick, r.demand_liters, r.served_liters, r.unmet_liters) for r in records]
+        if not rows:
+            return 0
+        with self._lock:
+            self._conn.execute("BEGIN")
+            try:
+                self._conn.executemany(
+                    "INSERT INTO demand_history (epoch_id, station_id, fuel_type, tick, demand, served, unmet) VALUES (?,?,?,?,?,?,?)"
+                    " ON CONFLICT (epoch_id, station_id, fuel_type, tick) DO UPDATE SET demand=excluded.demand, served=excluded.served, unmet=excluded.unmet",
+                    rows,
+                )
+                self._conn.execute("COMMIT")
+            except BaseException:
+                self._conn.execute("ROLLBACK")
+                raise
+        return len(rows)
+
+    def complete_run(self, epoch_id: int, rows_per_tick: int) -> tuple[int, int] | None:
+        """The newest run of consecutive complete ticks, as (first_tick, last_tick); None if there is none.
+
+        A tick is complete when it has all its rows. Older ticks beyond a gap are kept but are not
+        part of the run: the forecaster needs a contiguous recent window, not tick 0.
+        """
+        with self._lock:
+            counts = self._conn.execute(
+                "SELECT tick FROM demand_history WHERE epoch_id=? GROUP BY tick HAVING COUNT(*) >= ? ORDER BY tick",
+                (epoch_id, rows_per_tick),
+            ).fetchall()
+        run: tuple[int, int] | None = None
+        for row in counts:
+            t = row["tick"]
+            run = (run[0], t) if run is not None and t == run[1] + 1 else (t, t)
+        return run
+
+    def demand_rows(self, epoch_id: int, *, station_id: str | None = None, fuel_type: str | None = None, from_tick: int = 0, limit: int | None = None) -> list[sqlite3.Row]:
+        sql = "SELECT station_id, fuel_type, tick, demand, served, unmet FROM demand_history WHERE epoch_id=? AND tick>=?"
+        args: list[object] = [epoch_id, from_tick]
+        if station_id:
+            sql += " AND station_id=?"
+            args.append(station_id)
+        if fuel_type:
+            sql += " AND fuel_type=?"
+            args.append(fuel_type)
+        sql += " ORDER BY tick, station_id, fuel_type"
+        if limit:
+            sql += " LIMIT ?"
+            args.append(limit)
+        with self._lock:
+            return self._conn.execute(sql, args).fetchall()
+
+    def demand_row_count(self, epoch_id: int) -> int:
+        with self._lock:
+            return self._conn.execute("SELECT COUNT(*) FROM demand_history WHERE epoch_id=?", (epoch_id,)).fetchone()[0]

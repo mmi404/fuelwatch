@@ -13,6 +13,8 @@ from dataclasses import dataclass, fields
 @dataclass(frozen=True)
 class Settings:
     simulator_url: str = "http://localhost:8000"
+    # Where world epochs and demand history are kept (":memory:" for tests).
+    database_path: str = "data/fuelwatch.db"
     # Per-request timeout towards the simulator, in seconds.
     request_timeout: float = 3.0
     # How often the poller asks the simulator for the current tick.

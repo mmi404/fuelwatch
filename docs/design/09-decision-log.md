@@ -100,10 +100,10 @@ Status values: **Accepted** (in force), **Revised** (replaced the first plan), *
 |---|---|
 | Context | An evaluator can reset the simulator at any time; the tick goes backwards. State survives a restart, so a restart does not reset. |
 | Options | Ignore; **detect and start a new epoch**; require a manual reset of our system |
-| Decision | A tick lower than the last published tick, or a changed scenario or seed, starts a new epoch: caches and open proposals are discarded, history is reloaded, and everything persisted is keyed by epoch |
+| Decision | A tick lower than the last published tick, a changed scenario, seed, instance or tick length, or running counters (allocation count, served litres) that went backwards, starts a new epoch: caches and open proposals are discarded, history is reloaded, and everything persisted is keyed by epoch |
 | Why | Without it, a reset mid-demo leaves stale proposals on screen and a forecaster trained on another world. It is cheap, testable, and a likely evaluator action. |
-| Cost | A little bookkeeping in every table. |
-| Revisit if | Never needs revisiting. |
+| Cost | A little bookkeeping in every table. A reset followed by a run past the old tick inside one poll interval, with nothing allocated, goes unseen; seeded demand makes the stored history still valid, so the harm is limited to our own state (Figure 4.9 note). |
+| Revisit if | The executor exists: add missing-allocation-of-ours as a signal. |
 
 ### ADR-10 Frontend: Next.js; the browser polls first, streaming later. Accepted
 

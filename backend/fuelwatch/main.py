@@ -14,10 +14,12 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .client import SimulatorClient
+from .db import Database
 from .config import Settings
 from .health import Mode, compute_mode
 from .poller import Poller
 from .snapshot import SnapshotStore
+from .world import WorldTracker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -29,12 +31,15 @@ def error_body(code: str, message: str) -> dict[str, dict[str, str]]:
     return {"error": {"code": code, "message": message}}
 
 
-def create_app(settings: Settings | None = None, client: SimulatorClient | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, client: SimulatorClient | None = None, db: Database | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     store = SnapshotStore()
     owns_client = client is None
     client = client or SimulatorClient(settings.simulator_url, settings=settings)
-    poller = Poller(client, store, settings)
+    owns_db = db is None
+    db = db or Database(settings.database_path)
+    world = WorldTracker(db, client)
+    poller = Poller(client, store, settings, world)
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -47,11 +52,15 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
                 await task
             if owns_client:
                 await client.aclose()
+            if owns_db:
+                db.close()
 
     app = FastAPI(title="FuelWatch backend", version="0.1.0", lifespan=lifespan)
     app.state.store = store
     app.state.poller = poller
     app.state.client = client
+    app.state.world = world
+    app.state.db = db
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
@@ -91,6 +100,7 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
             "last_error": store.last_error,
             "breakers": client.breaker_states(),
             "retries": client.retry_stats(),
+            **world.info(),
         }
 
     @app.get("/livez")

@@ -241,9 +241,11 @@ An evaluator can press Reset on the simulator at any moment. The tick then goes 
 flowchart TB
   n(["new snapshot"]) --> c1{"tick lower than the last<br/>published tick?"}
   c1 -->|"yes"| reset
-  c1 -->|"no"| c2{"scenario id or seed<br/>changed?"}
+  c1 -->|"no"| c2{"scenario, seed, instance<br/>or tick length changed?"}
   c2 -->|"yes"| reset
-  c2 -->|"no"| ok["same world, continue"]
+  c2 -->|"no"| c3{"allocation count or served<br/>litres went backwards?"}
+  c3 -->|"yes"| reset
+  c3 -->|"no"| ok["same world, continue"]
   reset["new world epoch"] --> a1["drop forecasts and anomaly state"]
   a1 --> a2["expire open proposals as EXPIRED, reason world_reset"]
   a2 --> a3["reload demand history for the new epoch"]
@@ -252,3 +254,5 @@ flowchart TB
 ```
 
 *Figure 4.9. Without this, a reset during a demo would leave stale proposals on screen and a forecaster trained on the wrong world.*
+
+A reset leaves the instance id, scenario and seed unchanged and restarts the history row ids (`[live]`), so only the tick and the running counters can reveal it. The check runs before the snapshot is published, so nobody sees the new world under the old epoch. One case is invisible: a reset followed by a run past the old tick within one poll interval, with nothing allocated. Demand is seeded, so the stored history is still correct for the new world, and the loss is limited to state we created ourselves; once the executor exists, an allocation of ours that is missing from the list is a further signal.

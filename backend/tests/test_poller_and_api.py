@@ -126,7 +126,7 @@ def test_request_refresh_forces_full_read_on_same_tick():
 
 
 def make_app(fake: Switchable):
-    settings = Settings(poll_interval=0.01, ready_max_age=60)
+    settings = Settings(poll_interval=0.01, ready_max_age=60, database_path=":memory:")
     client = SimulatorClient("http://sim", transport=httpx.MockTransport(fake.handler), sleep=Sleeps())
     return create_app(settings=settings, client=client)
 
