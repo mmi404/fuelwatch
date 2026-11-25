@@ -92,7 +92,7 @@ def test_database_uses_wal_and_versions_its_schema(tmp_path):
     path = str(tmp_path / "sub" / "fw.db")
     db = Database(path)
     assert db._conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
-    assert db._conn.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert db._conn.execute("PRAGMA user_version").fetchone()[0] == 2
     db.close()
     Database(path).close()  # reopening an existing file is fine
 

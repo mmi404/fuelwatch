@@ -233,10 +233,10 @@ A recommendation is only useful if the operator can see why. Each proposal carri
 |---|---|
 | **Headline** | Station, fuel, hours to stockout at P50 and P90, risk level |
 | **Action** | Depot, route, litres, expected arrival tick |
-| **Effect** | Risk before and after, unmet litres avoided over the horizon |
+| **Effect** | Risk before and after, hours to stockout before and after, and the unmet litres avoided: the estimator is run again with the proposed shipments added, and the P90 shortfall over the next 48 ticks is compared |
 | **Signals** | Current stock, expected demand to arrival, stock on the road, active events, scheduled supply |
 | **Binding constraints** | What stopped it from doing more: route maximum, depot stock, dispatch capacity, headroom |
-| **Alternatives** | At least: do nothing, the second-best route or depot, wait one tick. Each with its effect, computed by the same estimator |
+| **Alternatives** | Do nothing, the same shipments one tick later, and the fastest other usable route with stock (when there is one). Each with its outlook, computed by the same estimator |
 | **Confidence** | `High`, `Medium` or `Low` with the reasons |
 
 ## 6.7 Confidence
@@ -249,7 +249,7 @@ A score from 1.0 reduced by the conditions below, then bucketed: `High` at 0.8 o
 | Unexplained anomaly active for this station | 0.20 |
 | Snapshot stale, inconsistent or older than 2 ticks | 0.20 |
 | Allocator fell back from the LP | 0.10 |
-| Recent forecast coverage outside 75% to 85% | 0.10 |
+| Recent forecast coverage outside 72% to 85%, once at least 200 forecasts are scored | 0.10 |
 
 ## 6.8 Evaluation: the replay benchmark
 

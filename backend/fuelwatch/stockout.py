@@ -168,6 +168,71 @@ def assess(snapshot: WorldSnapshot, forecaster: DemandForecaster, horizon: int =
     return out
 
 
+@dataclass(frozen=True)
+class WhatIf:
+    """The outlook for one station and fuel if extra fuel arrives at the given ticks."""
+
+    level: str
+    hours_p50: float | None
+    hours_p90: float | None
+    risk: float | None
+    unmet_p90: float  # litres of demand not served over UNMET_WINDOW_TICKS on the P90 path
+
+
+UNMET_WINDOW_TICKS = 48
+
+
+def unmet_liters(inventory: float, capacity: float, arrivals: dict[int, float], demand: list[float], start_tick: int, closed: set[int]) -> float:
+    """Litres of demand that cannot be served along `demand`, same tick order as `project`."""
+    stock, unmet = inventory, 0.0
+    for i, d in enumerate(demand):
+        t = start_tick + i
+        stock += min(max(0.0, capacity - stock), arrivals.get(t, 0.0))
+        if t in closed:
+            unmet += d
+            continue
+        served = min(stock, d)
+        unmet += d - served
+        stock -= served
+    return unmet
+
+
+def what_if(snapshot: WorldSnapshot, forecaster: DemandForecaster, station_id: str, fuel_type: str, extra: dict[int, float] | None = None, horizon: int = HORIZON_TICKS) -> WhatIf | None:
+    """Re-run the estimator for one pair with `extra` litres arriving at the given ticks.
+
+    The same projection `assess` uses, so "do nothing", "this shipment" and "this shipment one tick
+    later" are all measured with one yardstick. None when the pair is unknown or has no forecast.
+    """
+    T, tm = snapshot.tick, snapshot.tick_minutes
+    station = next((s for s in snapshot.stations if s.id == station_id), None)
+    fuel = next((f for f in (station.capacity if station else {}) if f.value == fuel_type), None)
+    if station is None or fuel is None:
+        return None
+    cumulative = forecaster.cumulative(station, fuel_type, T, horizon, tm, snapshot.events)
+    if cumulative is None:
+        return None
+    routes = [r for r in snapshot.routes if r.destination_station_id == station_id]
+    usable = [r.transit_ticks for r in routes if r.status.value == "AVAILABLE"] or [r.transit_ticks for r in routes]
+    best_route = min(usable) if usable else None
+    critical_below = max(4.0, ((best_route or 0) + 4) * tm / 60.0) if best_route is not None else 4.0
+    inventory, capacity = float(station.inventory.get(fuel, 0.0)), float(station.capacity.get(fuel, 0.0))
+    arrivals = dict(inbound_by_tick(snapshot, station_id, fuel))
+    for t, q in (extra or {}).items():
+        arrivals[t] = arrivals.get(t, 0.0) + q
+    closed = outage_ticks(station, snapshot, T, horizon)
+    t50 = project(inventory, capacity, arrivals, increments(cumulative, 0.0), T, closed)
+    p90_path = increments(cumulative, Z90)
+    t90 = project(inventory, capacity, arrivals, p90_path, T, closed)
+    h50 = None if t50 is None else (t50 - T) * tm / 60.0
+    h90 = None if t90 is None else (t90 - T) * tm / 60.0
+    w = min(RISK_WINDOW_TICKS, horizon)
+    window = cumulative[w - 1]
+    available = inventory + sum(q for t, q in arrivals.items() if t < T + w)
+    risk = (1.0 if window.mean > available else 0.0) if window.sd <= 0 else 1.0 - _phi((available - window.mean) / window.sd)
+    unmet = unmet_liters(inventory, capacity, arrivals, p90_path[:UNMET_WINDOW_TICKS], T, closed)
+    return WhatIf(_level(h90, critical_below), h50, h90, risk, unmet)
+
+
 def outage_ticks(station: Station, snapshot: WorldSnapshot, start: int, horizon: int) -> set[int]:
     """Ticks in the horizon during which the station serves nothing (a station_outage covering it, inclusive)."""
     closed: set[int] = set()

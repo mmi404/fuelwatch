@@ -8,6 +8,7 @@ here; the snapshot and forecasts are rebuilt from the simulator.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 from collections.abc import Iterable
@@ -17,7 +18,7 @@ from pathlib import Path
 
 from .models import DemandRecord
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS world_epoch (
@@ -44,6 +45,53 @@ CREATE TABLE IF NOT EXISTS demand_history (
     PRIMARY KEY (epoch_id, station_id, fuel_type, tick)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS demand_history_by_tick ON demand_history (epoch_id, tick);
+CREATE TABLE IF NOT EXISTS proposal (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    epoch_id INTEGER NOT NULL REFERENCES world_epoch(id),
+    station_id TEXT NOT NULL,
+    fuel_type TEXT NOT NULL,
+    snapshot_tick INTEGER NOT NULL,
+    expires_tick INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    status_reason TEXT,
+    policy TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    risk_before REAL,
+    risk_after REAL,
+    explanation TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS proposal_by_status ON proposal (epoch_id, status);
+CREATE TABLE IF NOT EXISTS proposal_line (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    proposal_id INTEGER NOT NULL REFERENCES proposal(id),
+    depot_id TEXT NOT NULL,
+    station_id TEXT NOT NULL,
+    route_id TEXT NOT NULL,
+    fuel_type TEXT NOT NULL,
+    proposed_quantity REAL NOT NULL,
+    idempotency_key TEXT UNIQUE,
+    status TEXT NOT NULL,
+    sim_allocation_id INTEGER,
+    executed_quantity REAL,
+    failure_code TEXT
+);
+CREATE INDEX IF NOT EXISTS proposal_line_by_proposal ON proposal_line (proposal_id);
+CREATE TABLE IF NOT EXISTS alert (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    epoch_id INTEGER NOT NULL REFERENCES world_epoch(id),
+    station_id TEXT NOT NULL,
+    fuel_type TEXT NOT NULL,
+    level TEXT NOT NULL,
+    first_tick INTEGER NOT NULL,
+    tick INTEGER NOT NULL,
+    hours_p50 REAL,
+    hours_p90 REAL,
+    state TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS alert_by_state ON alert (epoch_id, state);
 """
 
 
@@ -174,3 +222,110 @@ class Database:
     def demand_row_count(self, epoch_id: int) -> int:
         with self._lock:
             return self._conn.execute("SELECT COUNT(*) FROM demand_history WHERE epoch_id=?", (epoch_id,)).fetchone()[0]
+
+    # -- proposals -----------------------------------------------------------------------
+
+    def insert_proposal(self, *, epoch_id: int, station_id: str, fuel_type: str, snapshot_tick: int, expires_tick: int, policy: str, confidence: float, risk_before: float | None, risk_after: float | None, explanation: dict, lines: list[dict]) -> int:
+        """Store a proposal and its lines in one transaction; each line's key is `fw-p{proposal}-l{line}`.
+
+        The key is written with the line, before anything can be sent, so a crash or a timeout later
+        always finds the same key to retry with (design 3.3).
+        """
+        now = datetime.now(UTC).isoformat()
+        with self._lock:
+            self._conn.execute("BEGIN")
+            try:
+                cur = self._conn.execute(
+                    "INSERT INTO proposal (epoch_id, station_id, fuel_type, snapshot_tick, expires_tick, status, policy, confidence, risk_before, risk_after, explanation, created_at, updated_at)"
+                    " VALUES (?,?,?,?,?,'PROPOSED',?,?,?,?,?,?,?)",
+                    (epoch_id, station_id, fuel_type, snapshot_tick, expires_tick, policy, confidence, risk_before, risk_after, json.dumps(explanation), now, now),
+                )
+                pid = cur.lastrowid
+                for line in lines:
+                    lc = self._conn.execute(
+                        "INSERT INTO proposal_line (proposal_id, depot_id, station_id, route_id, fuel_type, proposed_quantity, status) VALUES (?,?,?,?,?,?,'PLANNED')",
+                        (pid, line["depot_id"], line["station_id"], line["route_id"], line["fuel_type"], line["quantity"]),
+                    )
+                    self._conn.execute("UPDATE proposal_line SET idempotency_key=? WHERE id=?", (f"fw-p{pid}-l{lc.lastrowid}", lc.lastrowid))
+                self._conn.execute("COMMIT")
+            except BaseException:
+                self._conn.execute("ROLLBACK")
+                raise
+        return pid
+
+    def set_proposal_status(self, proposal_id: int, status: str, reason: str | None = None, *, only_from: tuple[str, ...] | None = None) -> bool:
+        """Move a proposal to `status`; with `only_from`, only if it is currently in one of those states."""
+        sql = "UPDATE proposal SET status=?, status_reason=?, updated_at=? WHERE id=?"
+        args: list[object] = [status, reason, datetime.now(UTC).isoformat(), proposal_id]
+        if only_from:
+            sql += f" AND status IN ({','.join('?' * len(only_from))})"
+            args.extend(only_from)
+        with self._lock:
+            return self._conn.execute(sql, args).rowcount > 0
+
+    def proposals(self, *, epoch_id: int | None = None, statuses: tuple[str, ...] | None = None, station_id: str | None = None, fuel_type: str | None = None, limit: int = 100) -> list[dict]:
+        sql, args = "SELECT * FROM proposal WHERE 1=1", []
+        if epoch_id is not None:
+            sql += " AND epoch_id=?"
+            args.append(epoch_id)
+        if statuses:
+            sql += f" AND status IN ({','.join('?' * len(statuses))})"
+            args.extend(statuses)
+        if station_id:
+            sql += " AND station_id=?"
+            args.append(station_id)
+        if fuel_type:
+            sql += " AND fuel_type=?"
+            args.append(fuel_type)
+        sql += " ORDER BY id DESC LIMIT ?"
+        args.append(limit)
+        with self._lock:
+            rows = self._conn.execute(sql, args).fetchall()
+            out = []
+            for r in rows:
+                d = dict(r)
+                d["explanation"] = json.loads(d["explanation"])
+                d["lines"] = [dict(x) for x in self._conn.execute("SELECT * FROM proposal_line WHERE proposal_id=? ORDER BY id", (d["id"],)).fetchall()]
+                out.append(d)
+        return out
+
+    def proposal(self, proposal_id: int) -> dict | None:
+        with self._lock:
+            row = self._conn.execute("SELECT id FROM proposal WHERE id=?", (proposal_id,)).fetchone()
+            if row is None:
+                return None
+            d = dict(self._conn.execute("SELECT * FROM proposal WHERE id=?", (proposal_id,)).fetchone())
+            d["explanation"] = json.loads(d["explanation"])
+            d["lines"] = [dict(x) for x in self._conn.execute("SELECT * FROM proposal_line WHERE proposal_id=? ORDER BY id", (proposal_id,)).fetchall()]
+        return d
+
+    # -- alerts ---------------------------------------------------------------------------
+
+    def alerts(self, *, epoch_id: int | None = None, states: tuple[str, ...] | None = None, limit: int = 200) -> list[dict]:
+        sql, args = "SELECT * FROM alert WHERE 1=1", []
+        if epoch_id is not None:
+            sql += " AND epoch_id=?"
+            args.append(epoch_id)
+        if states:
+            sql += f" AND state IN ({','.join('?' * len(states))})"
+            args.extend(states)
+        sql += " ORDER BY id DESC LIMIT ?"
+        args.append(limit)
+        with self._lock:
+            return [dict(r) for r in self._conn.execute(sql, args).fetchall()]
+
+    def insert_alert(self, *, epoch_id: int, station_id: str, fuel_type: str, level: str, tick: int, hours_p50: float | None, hours_p90: float | None) -> int:
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO alert (epoch_id, station_id, fuel_type, level, first_tick, tick, hours_p50, hours_p90, state, updated_at) VALUES (?,?,?,?,?,?,?,?,'open',?)",
+                (epoch_id, station_id, fuel_type, level, tick, tick, hours_p50, hours_p90, datetime.now(UTC).isoformat()),
+            )
+        return cur.lastrowid
+
+    def refresh_alert(self, alert_id: int, *, level: str, tick: int, hours_p50: float | None, hours_p90: float | None) -> None:
+        with self._lock:
+            self._conn.execute("UPDATE alert SET level=?, tick=?, hours_p50=?, hours_p90=?, updated_at=? WHERE id=?", (level, tick, hours_p50, hours_p90, datetime.now(UTC).isoformat(), alert_id))
+
+    def set_alert_state(self, alert_id: int, state: str) -> None:
+        with self._lock:
+            self._conn.execute("UPDATE alert SET state=?, updated_at=? WHERE id=?", (state, datetime.now(UTC).isoformat(), alert_id))

@@ -26,8 +26,9 @@ Two interfaces matter: the one FuelWatch **exposes** to its dashboard and to ope
 | GET | `/api/status` | Mode, breaker states, stream state, epoch, versions, fallback counters | `200` | no |
 | GET | `/api/risks` | One row per station and fuel: hours to stockout P50 and P90, risk, level, ordered by urgency | `200 [..]` | no |
 | GET | `/api/forecast` | Demand forecast with P10, P50, P90, filterable by station and fuel | `200 [..]` | no |
-| GET | `/api/proposals` | Open and recent proposals with explanation cards | `200 [..]` | no |
+| GET | `/api/proposals` | Proposals of the current world, newest first, with lines and explanation cards. Query: `status` (comma list), `limit` 1 to 200 | `200 [..]` or `422` | no |
 | GET | `/api/proposals/{id}` | One proposal with lines and attempts | `200` or `404` | no |
+| GET | `/api/alerts` | Stockout alerts of the current world, newest first. Query: `state` (comma list of open, acknowledged, cleared) | `200 [..]` | no |
 | POST | `/api/proposals/{id}/approve` | Approve; execution follows the gate. Body may carry `override_stale` | `200` with the new state | yes |
 | POST | `/api/proposals/{id}/reject` | Reject | `200` | yes |
 | GET | `/api/allocations` | Tracked shipments from our ledger, with simulator status | `200 [..]` | no |

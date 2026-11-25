@@ -182,15 +182,19 @@ erDiagram
   PROPOSAL {
     int id PK
     int epoch_id FK
+    string station_id
+    string fuel_type
     int snapshot_tick
     int expires_tick
     string status
+    string status_reason
     string policy "greedy, lp, rules"
     float confidence
     float risk_before
     float risk_after
     json explanation
     datetime created_at
+    datetime updated_at
   }
   PROPOSAL_LINE {
     int id PK
@@ -219,13 +223,15 @@ erDiagram
   ALERT {
     int id PK
     int epoch_id FK
-    int tick
     string station_id
     string fuel_type
     string level "WATCH, WARNING, CRITICAL"
+    int first_tick "when it opened"
+    int tick "last evaluation"
     float hours_p50
     float hours_p90
     string state "open, acknowledged, cleared"
+    datetime updated_at
   }
   AUDIT_LOG {
     int id PK
@@ -244,8 +250,8 @@ Design notes:
 
 - **`idempotency_key` is unique and written with the line, before any request is sent.** Its format is `fw-p{proposal_id}-l{line_id}`. If a POST times out, the retry sends the same key and body, and the simulator returns the existing allocation (`[live]`), so a retry cannot create a second shipment.
 - **Demand history is synced by gap, not by schedule.** The endpoint is newest-first, has no `since` filter and returns at most 2,000 rows per response (`[live]`). After each snapshot the tracker finds the newest run of complete ticks in the database (a tick is complete when it holds all 12 rows), asks for the missing ticks plus one of slack, and reads station by station when that would exceed the cap. A gap that survives widens the next request, so a restart or a failed sync heals itself. The forecaster needs a contiguous recent window, so older rows behind a gap are kept but not counted.
+- **A proposal is for one station and one fuel**, so supersession and the explanation card have one subject; its lines are the shipments for that pair (several depots or routes in the same tick, sharing each depot's dispatch capacity). The key is assigned in the same transaction that stores the line, so no line exists without one.
 - **`proposed_quantity` is an upper bound.** `executed_quantity` is what was actually sent after re-validation and is never larger.
-- **One proposal has several lines** because a single recommendation may use several depots, fuels or routes in the same tick, and dispatch capacity is shared across them.
 - **`execution_attempt` is append-only.** Every try, success or not, is a row, so the audit trail shows exactly what happened under retries.
 
 ## 3.4 What can be lost

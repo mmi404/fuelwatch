@@ -32,10 +32,20 @@ stateDiagram-v2
 
 | Transition | Trigger |
 |---|---|
-| `PROPOSED` to `SUPERSEDED` | A newer snapshot produces a different proposal for the same station and fuel |
+| `PROPOSED` to `SUPERSEDED` | A newer snapshot produces a materially different proposal for the same station and fuel, or no proposal at all for it because the shipment is no longer needed |
 | `PROPOSED` or `HELD` to `EXPIRED` | The expiry tick passes, or the world epoch changes (a reset) |
 | `APPROVED` to `HELD` | The execution gate is closed: data too old, stale flag, or write breaker open |
 | `EXECUTING` to `PARTIAL` | Re-validation skipped some lines, or the simulator rejected some with a 409 |
+
+A proposal is for one station and one fuel; its lines are the shipments for that pair. After every snapshot the allocator's plan is compared with the open proposal for each pair:
+
+| Plan for the pair | What happens |
+|---|---|
+| Same depots and routes, and the total within the larger of 500 L or 15% of the old total | The open proposal is kept. Its numbers stay those of its own snapshot tick; re-validation at execution time uses the live world |
+| Anything else | A new proposal is created and the old one becomes `SUPERSEDED`, naming its replacement |
+| No shipment | The open proposal becomes `SUPERSEDED` with the reason "no longer recommended" |
+
+A stale snapshot, or one read while the tick moved, creates no new proposals; the open ones wait. The 500 L and 15% are initial values: tight enough that a proposal follows the plan, loose enough that a rising need does not replace it every tick.
 
 Expiry is measured in ticks, not seconds, so it means the same thing at any simulation speed. The initial value is 40 ticks (10 simulated hours), to be tuned from the benchmark; it is deliberately long because re-validation, not expiry, protects correctness (ADR-07).
 
@@ -63,6 +73,22 @@ stateDiagram-v2
 ```
 
 *Figure 5.2. After `ARRIVED`, the litres the station actually received are compared with `executed_quantity`. A shortfall means fuel was lost to headroom and is counted.*
+
+### Alert lifecycle
+
+An alert tracks one station and fuel while its stockout level is `WATCH` or worse. It is separate from proposals, since an alert can exist where no shipment is possible.
+
+```mermaid
+stateDiagram-v2
+  [*] --> open : level reaches WATCH
+  open --> acknowledged : operator acknowledges
+  acknowledged --> open : level gets worse
+  open --> cleared : level back to OK
+  acknowledged --> cleared : level back to OK
+  cleared --> [*]
+```
+
+*Figure 5.2b. The level of an open alert is refreshed on every snapshot, so one alert follows a station through WATCH, WARNING and CRITICAL instead of opening three. An unknown assessment (no forecast yet) leaves an alert as it is. A world reset clears all alerts of the old epoch.*
 
 ## 5.2 The simulator's allocation lifecycle (observed)
 

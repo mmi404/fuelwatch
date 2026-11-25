@@ -19,6 +19,7 @@ from .config import Settings
 from .health import Mode, compute_mode
 from .intel import Intelligence
 from .poller import Poller
+from .proposals import ProposalService
 from .snapshot import SnapshotStore
 from .world import WorldTracker
 
@@ -40,7 +41,8 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
     owns_db = db is None
     db = db or Database(settings.database_path)
     world = WorldTracker(db, client)
-    intel = Intelligence(db, world)
+    proposals = ProposalService(db, world)
+    intel = Intelligence(db, world, proposals=proposals)
     poller = Poller(client, store, settings, world, intel)
 
     @contextlib.asynccontextmanager
@@ -134,6 +136,26 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
         if not 1 <= ticks <= 96:
             raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": "ticks must be between 1 and 96"})
         return intel.forecast_rows(station_id, fuel, ticks)
+
+    @app.get("/api/proposals")
+    async def api_proposals(status: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        """Open and recent proposals of the current world, newest first, each with its explanation card."""
+        if not 1 <= limit <= 200:
+            raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": "limit must be between 1 and 200"})
+        statuses = tuple(x.strip().upper() for x in status.split(",") if x.strip()) if status else None
+        return await asyncio.to_thread(proposals.recent, statuses=statuses, limit=limit)
+
+    @app.get("/api/proposals/{proposal_id}")
+    async def api_proposal(proposal_id: int) -> dict[str, Any]:
+        found = await asyncio.to_thread(proposals.get, proposal_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"no proposal {proposal_id}"})
+        return found
+
+    @app.get("/api/alerts")
+    async def api_alerts(state: str | None = None) -> list[dict[str, Any]]:
+        states = tuple(x.strip().lower() for x in state.split(",") if x.strip()) if state else None
+        return await asyncio.to_thread(proposals.alerts, states)
 
     return app
 
