@@ -28,6 +28,9 @@ class Settings:
     # Listen to the simulator's tick stream as an early-refresh hint. Off in the dataclass so unit tests stay quiet;
     # `from_env` turns it on unless STREAM_ENABLED says otherwise.
     stream_enabled: bool = False
+    # One JSON object per log line. Off in the dataclass so unit tests keep plain output; `from_env` turns it on.
+    log_json: bool = False
+    log_level: str = "INFO"
     # Attempts to obtain a snapshot whose tick did not move during the read.
     torn_read_attempts: int = 3
     # A whole world read that takes longer than this is abandoned: it would be too old to publish.
@@ -68,5 +71,6 @@ class Settings:
             kind = type(f.default)
             values[f.name] = raw.strip().lower() in ("1", "true", "yes", "on") if kind is bool else kind(raw)
         values.setdefault("stream_enabled", True)
+        values.setdefault("log_json", True)
         settings = cls(**values)  # type: ignore[arg-type]
         return cls(**{**values, "simulator_url": settings.simulator_url.rstrip("/")})  # type: ignore[arg-type]

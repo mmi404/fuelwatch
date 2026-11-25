@@ -110,7 +110,7 @@ Labels come only from fixed sets (endpoint names, outcome enums, station and fue
 
 | Metric | Type | Labels | Purpose |
 |---|---|---|---|
-| `fuelwatch_simulator_requests_total` | counter | `endpoint`, `outcome` (`ok`, `transient`, `rejected`, `invalid`) | Rate, error ratio, load on the simulator (NFR-3) |
+| `fuelwatch_simulator_requests_total` | counter | `endpoint`, `outcome` (`ok`, `transient`, `rejected`, `invalid`, `circuit_open`) | Rate, error ratio, load on the simulator (NFR-3). One count per request, by its final outcome after retries; `circuit_open` means nothing was sent |
 | `fuelwatch_simulator_request_seconds` | histogram | `endpoint` | Simulator latency |
 | `fuelwatch_retries_total`, `fuelwatch_retry_budget_exhausted_total` | counter | `kind` (`read`, `write`) | Retry pressure |
 | `fuelwatch_breaker_state` | gauge | `breaker` | 0 closed, 1 half-open, 2 open |
@@ -119,15 +119,15 @@ Labels come only from fixed sets (endpoint names, outcome enums, station and fue
 | `fuelwatch_mode` | gauge | `mode` | Which mode is active |
 | `fuelwatch_world_resets_total` | counter | none | Resets detected |
 | `fuelwatch_stream_state`, `fuelwatch_stream_stalls_total` | gauge, counter | `state` | Stream health |
-| `fuelwatch_hours_to_stockout` | gauge | `station`, `fuel`, `quantile` | The risk picture, 24 series |
-| `fuelwatch_forecast_abs_pct_error` | histogram | `horizon` | Forecast quality against the noise floor |
+| `fuelwatch_hours_to_stockout` | gauge | `station`, `fuel`, `quantile` | The risk picture, 24 series. 24 hours is reported when no stockout is projected within the 96-tick horizon |
+| `fuelwatch_forecast_abs_pct_error` | histogram | `horizon` | Forecast quality against the noise floor. The only horizon scored is the one-step-ahead forecast made before each tick is learned, so `horizon` is `1` |
 | `fuelwatch_forecast_interval_coverage` | gauge | none | Should sit near 0.8 |
 | `fuelwatch_decision_seconds` | histogram | `policy` | Decision time |
 | `fuelwatch_fallback_activations_total` | counter | `component`, `from`, `to` | Every step down a ladder |
 | `fuelwatch_proposals_total` | counter | `status` | Proposal flow |
 | `fuelwatch_allocation_outcomes_total` | counter | `outcome` | `arrived`, `failed`, `rejected_409`, `cancelled` |
 | `fuelwatch_fuel_lost_litres_total` | counter | none | Litres sent minus litres received |
-| `fuelwatch_http_request_seconds` | histogram | `route`, `method`, `status_class` | Our own API latency (NFR-2) |
+| `fuelwatch_http_request_seconds` | histogram | `route` (the route template), `method`, `status_class` | Our own API latency (NFR-2). `/metrics` and the endless `/api/stream` are not timed |
 | `fuelwatch_ledger_errors_total` | counter | none | SQLite failures |
 
 ### Service level objectives
@@ -143,7 +143,7 @@ Alerts, in order of importance: breaker open for over 30 s; mode `STALE`; a fall
 
 ### Structured logs
 
-JSON lines with `ts`, `level`, `event`, `tick`, `epoch`, `request_id` and event-specific fields. Event names are a fixed list so they can be searched and alerted on:
+JSON lines with `ts`, `level`, `event`, `tick`, `epoch`, `request_id` and event-specific fields. Every API response carries an `X-Request-ID` header (a caller's own is kept), and the same id is on the log lines written while it was handled; background work has none. Lines that are not one of the events below have the event `log` and a `msg`. Event names are a fixed list so they can be searched and alerted on:
 
 `snapshot.published`, `snapshot.read_failed`, `snapshot.inconsistent`, `breaker.opened`, `breaker.closed`, `world.reset`, `forecast.fallback`, `allocator.fallback`, `proposal.created`, `proposal.superseded`, `proposal.expired`, `execution.attempt`, `execution.outcome`, `execution.unknown_resolved`, `stream.stalled`, `fault.suspected`.
 

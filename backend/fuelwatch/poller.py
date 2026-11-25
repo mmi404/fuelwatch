@@ -14,6 +14,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from .client import SimulatorClient
+from .metrics import NOOP
 from .config import Settings
 from .errors import SimulatorError
 from .snapshot import SnapshotStore
@@ -38,6 +39,7 @@ class Poller:
         self._settings = settings
         self._force_refresh = True
         self._wake = asyncio.Event()
+        self.obs = NOOP
         self.bus: EventBus | None = None
 
     def wake(self) -> None:
@@ -77,6 +79,7 @@ class Poller:
                     log.exception("epoch check failed")
             self._store.publish(snapshot)
             self._force_refresh = False
+            self.obs.snapshot(snapshot, self._world.epoch.id if self._world is not None and self._world.epoch else None)
             if self.bus is not None:
                 self.bus.publish("snapshot", {"tick": snapshot.tick, "tick_minutes": snapshot.tick_minutes, "stale": snapshot.stale, "consistent": snapshot.consistent})
             if self._world is not None:
@@ -93,6 +96,7 @@ class Poller:
             return True
         except SimulatorError as exc:
             self._store.record_failure(str(exc))
+            self.obs.snapshot_failed(str(exc), self._store.consecutive_failures)
             log.warning("poll failed (%d in a row): %s", self._store.consecutive_failures, exc)
             return False
 

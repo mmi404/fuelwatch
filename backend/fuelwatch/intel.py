@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 
 from .allocate import Plan, plan_shipments
 from .db import Database
 from .forecast import Z90, DemandForecaster, hour_of_day
+from .metrics import NOOP
 from .snapshot import WorldSnapshot
 from .stockout import Assessment, assess
 from .world import ResetEvent, WorldTracker
@@ -30,6 +32,7 @@ class Intelligence:
         self._proposals = proposals
         self.plan: Plan | None = None
         self.proposal_counts: dict[str, int] = {}
+        self.obs = NOOP
         self._world = world
         self.forecaster = forecaster or DemandForecaster()
         self.assessments: tuple[Assessment, ...] = ()
@@ -56,6 +59,7 @@ class Intelligence:
                 raw = await asyncio.to_thread(self._db.demand_rows, epoch.id, from_tick=first)
                 rows = [(r["station_id"], r["fuel_type"], r["tick"], r["demand"]) for r in raw if r["tick"] <= last]
                 self.forecaster.train(rows, snap.stations, snap.regions, snap.events, snap.tick_minutes)
+            decided = time.perf_counter()
             self.assessments = tuple(assess(snap, self.forecaster))
             self.assessed_tick = snap.tick
             self.snapshot = snap
@@ -69,9 +73,11 @@ class Intelligence:
         try:
             assessments = list(self.assessments)
             self.plan = plan_shipments(snap, self.forecaster, assessments)
+            self.obs.decision("greedy", time.perf_counter() - decided)
             self.proposal_counts = await asyncio.to_thread(self._sync_proposals, snap, assessments, self.plan)
         except Exception as exc:  # advice is optional: a failure here never hides the risk view
             self.last_error = repr(exc)
+            self.obs.ledger_error()
             log.exception("proposal update failed")
 
     def _sync_proposals(self, snap: WorldSnapshot, assessments: list[Assessment], plan: Plan) -> dict[str, int]:

@@ -25,6 +25,7 @@ from .config import Settings
 from .db import Database
 from .errors import CircuitOpenError, MalformedResponse, SimulatorError, SimulatorInvalidRequest, SimulatorNotFound, SimulatorRejected, SimulatorUnavailable
 from .health import Mode
+from .metrics import NOOP
 from .models import AllocationRequest, AllocationStatus, StationStatus
 from .snapshot import SnapshotStore, WorldSnapshot
 from .stockout import inbound_by_tick, outage_ticks
@@ -81,6 +82,7 @@ class Executor:
         self._last_retry_read: datetime | None = None
         self.counters: Counter[str] = Counter()
         self.autopilot = Autopilot()
+        self.obs = NOOP
         self.bus: EventBus | None = None
         self._autopilot_tick: int | None = None
         self._autopilot_used = [0.0, 0]  # litres and proposals approved in the current tick
@@ -116,6 +118,7 @@ class Executor:
                 raise ApiError(409, "INVALID_STATE", f"proposal {proposal_id} changed state")
             self._db.audit(actor, "proposal.approved", "proposal", proposal_id, {"override_stale": override_stale, "snapshot_tick": proposal["snapshot_tick"], "liters": sum(l["proposed_quantity"] for l in proposal["lines"])})
             self.counters["approved"] += 1
+            self.obs.proposal("APPROVED", id=proposal_id)
             result = await self._run(proposal_id, override_stale=override_stale, actor=actor)
             self._publish(proposal_id)
             return result
@@ -129,6 +132,7 @@ class Executor:
                 raise ApiError(409, "INVALID_STATE", f"proposal {proposal_id} is {proposal['status']}, not open")
             self._db.audit(actor, "proposal.rejected", "proposal", proposal_id, {})
             self.counters["rejected"] += 1
+            self.obs.proposal("REJECTED", id=proposal_id)
             self._publish(proposal_id)
             return self._db.proposal(proposal_id)  # type: ignore[return-value]
 
@@ -172,6 +176,7 @@ class Executor:
             why = "world reset" if proposal["epoch_id"] != epoch.id else "expired"
             self._db.set_proposal_status(proposal_id, "EXPIRED", why, only_from=("APPROVED", "HELD"))
             self._db.audit("system", "proposal.expired", "proposal", proposal_id, {"reason": why, "tick": snap.tick})
+            self.obs.proposal("EXPIRED", id=proposal_id, reason=why)
             return self._db.proposal(proposal_id)  # type: ignore[return-value]
 
         self._db.set_proposal_status(proposal_id, "EXECUTING", None, only_from=("APPROVED",))
@@ -192,11 +197,13 @@ class Executor:
         if self._db.set_proposal_status(proposal_id, "HELD", reason, only_from=("APPROVED", "HELD", "EXECUTING")):
             self._db.audit("system", "proposal.held", "proposal", proposal_id, {"reason": reason})
             self.counters["held"] += 1
+            self.obs.proposal("HELD", reason=reason, id=proposal_id)
 
     def _skip(self, proposal: dict, line: dict, reason: str) -> str:
         self._db.update_line(line["id"], status="SKIPPED", failure_code=reason)
         self._db.audit("system", "line.skipped", "proposal_line", line["id"], {"proposal_id": proposal["id"], "reason": reason, "approved_liters": line["proposed_quantity"]})
         self.counters["lines_skipped"] += 1
+        self.obs.execution("execution.outcome", logging.WARNING, line_id=line["id"], proposal_id=proposal["id"], outcome="SKIPPED", code=reason)
         return "SKIPPED"
 
     def _revalidate(self, snap: WorldSnapshot, line: dict, state: _RunState) -> tuple[str | None, int]:
@@ -249,6 +256,7 @@ class Executor:
         self._db.update_line(line["id"], status="SENDING", executed_quantity=float(quantity))
         self._inflight.add(line["id"])
         self._db.add_attempt(line["id"], snapshot_tick=snap.tick, snapshot_age_s=snap.age_seconds(), http_status=None, error_code=None, outcome="SENDING")
+        self.obs.execution("execution.attempt", line_id=line["id"], proposal_id=proposal["id"], key=line["idempotency_key"], liters=quantity, approved_liters=line["proposed_quantity"])
         request = AllocationRequest(idempotency_key=line["idempotency_key"], source_depot_id=line["depot_id"], destination_station_id=line["station_id"], route_id=line["route_id"], fuel_type=line["fuel_type"], quantity=float(quantity))
         age = snap.age_seconds()
         http_status: int | None = None
@@ -266,6 +274,8 @@ class Executor:
             self._db.add_attempt(line["id"], snapshot_tick=snap.tick, snapshot_age_s=age, http_status=http_status, error_code=error_code, outcome="REJECTED")
             self._db.audit("system", "line.rejected", "proposal_line", line["id"], {"proposal_id": proposal["id"], "code": error_code, "liters": quantity})
             self.counters["lines_rejected"] += 1
+            self.obs.allocation_outcome("rejected_409")
+            self.obs.execution("execution.outcome", logging.WARNING, line_id=line["id"], proposal_id=proposal["id"], outcome="REJECTED", code=error_code, liters=quantity)
             self._inflight.discard(line["id"])
             return "REJECTED"
         except (SimulatorUnavailable, MalformedResponse, SimulatorError) as exc:
@@ -275,6 +285,7 @@ class Executor:
             self._db.audit("system", "line.unknown", "proposal_line", line["id"], {"proposal_id": proposal["id"], "error": str(exc), "liters": quantity})
             state.record_sent(line, quantity, snap.tick, self._route_ticks(snap, line))  # it may have gone through
             self.counters["lines_unknown"] += 1
+            self.obs.execution("execution.outcome", logging.WARNING, line_id=line["id"], proposal_id=proposal["id"], outcome="UNKNOWN", code=error_code, liters=quantity)
             self._inflight.discard(line["id"])
             return "UNKNOWN"
 
@@ -283,6 +294,7 @@ class Executor:
         self._db.audit("system", "line.submitted", "proposal_line", line["id"], {"proposal_id": proposal["id"], "allocation_id": allocation.id, "liters": quantity, "approved_liters": line["proposed_quantity"]})
         state.record_sent(line, quantity, snap.tick, self._route_ticks(snap, line))
         self.counters["lines_submitted"] += 1
+        self.obs.execution("execution.outcome", line_id=line["id"], proposal_id=proposal["id"], outcome="SUBMITTED", allocation_id=allocation.id, liters=quantity)
         self._inflight.discard(line["id"])
         return "SUBMITTED"
 
@@ -303,6 +315,7 @@ class Executor:
         if self._db.set_proposal_status(proposal_id, status, None, only_from=("EXECUTING",)):
             self._db.audit("system", f"proposal.{status.lower()}", "proposal", proposal_id, {"lines": len(lines), "sent": sent})
             self.counters[f"proposal_{status.lower()}"] += 1
+            self.obs.proposal(status, id=proposal_id)
 
     # -- after every snapshot ---------------------------------------------------------------------
 
@@ -320,6 +333,7 @@ class Executor:
                 if found is not None:
                     self._db.update_line(line["id"], status="SUBMITTED", sim_allocation_id=found.id, failure_code=None)
                     self._db.audit("system", "line.resolved", "proposal_line", line["id"], {"allocation_id": found.id, "how": "found by idempotency key"})
+                    self.obs.execution("execution.unknown_resolved", line_id=line["id"], allocation_id=found.id, how="found by idempotency key")
                     continue
                 sent_at = self._db.last_attempt_at(line["id"])
                 # The request cannot still be in flight once a snapshot read after the lookup window
@@ -327,16 +341,23 @@ class Executor:
                 if sent_at is not None and snap.fetched_at >= datetime.fromisoformat(sent_at) + timedelta(seconds=LOOKUP_WINDOW_SECONDS):
                     self._db.update_line(line["id"], status="FAILED", failure_code="NOT_FOUND_AFTER_LOOKUP")
                     self._db.audit("system", "line.failed", "proposal_line", line["id"], {"reason": "no allocation carries the key after the lookup window"})
+                    self.obs.allocation_outcome("failed")
+                    self.obs.execution("execution.unknown_resolved", logging.WARNING, line_id=line["id"], how="not found after the lookup window")
             for line in self._db.lines_in(("SUBMITTED", "IN_TRANSIT"), epoch_id=epoch.id):
                 found = by_key.get(line["idempotency_key"])
                 if found is None:
                     continue
                 new = {AllocationStatus.PENDING: "SUBMITTED", AllocationStatus.IN_TRANSIT: "IN_TRANSIT", AllocationStatus.ARRIVED: "ARRIVED", AllocationStatus.FAILED: "FAILED", AllocationStatus.CANCELLED: "FAILED"}[found.status]
                 if new != line["status"]:
+                    if new == "ARRIVED":
+                        self.obs.allocation_outcome("arrived")
+                    elif new == "FAILED":
+                        self.obs.allocation_outcome("cancelled" if found.status is AllocationStatus.CANCELLED else "failed")
                     self._db.update_line(line["id"], status=new, **({"failure_code": found.failure_reason or found.status.value} if new == "FAILED" else {}))
             for p in self._db.proposals(epoch_id=epoch.id, statuses=("EXECUTING",), limit=100):
                 self._finalize(p["id"])
         except Exception:
+            self.obs.ledger_error()
             log.exception("ledger tracking failed")
 
     async def after_poll(self) -> None:

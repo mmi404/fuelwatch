@@ -15,6 +15,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from .client import SimulatorClient
+from .metrics import NOOP
 from .snapshot import SnapshotStore
 
 if TYPE_CHECKING:
@@ -43,6 +44,7 @@ class StreamListener:
         self._stall_seconds, self._read_timeout, self._clock, self._sleep = stall_seconds, read_timeout, clock, sleep
         self._check_every = check_every
         self.state = "DISCONNECTED"
+        self.obs = NOOP
         self.connects = 0
         self.stalls = 0
         self.tick_events = 0
@@ -97,7 +99,7 @@ class StreamListener:
                 except TimeoutError:
                     if opened and self._stalled():
                         self.state, self.stalls = "STALLED", self.stalls + 1
-                        log.warning("stream stalled: the REST tick moved but no tick event arrived; reconnecting")
+                        self.obs.stream_stalled(last_event_tick=self.last_event_tick, rest_tick=self._rest_tick)
                         return "stalled"
                     continue
                 if item is None:

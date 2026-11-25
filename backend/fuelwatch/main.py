@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -26,6 +26,8 @@ from .executor import ApiError, Executor
 from .stream import StreamListener
 from .health import Mode, compute_mode
 from .intel import Intelligence
+from . import logs
+from .metrics import CONTENT_TYPE, HttpTimingMiddleware, Observability
 from .poller import Poller
 from .proposals import ProposalService
 from .snapshot import SnapshotStore
@@ -74,9 +76,16 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
     bus = EventBus()
     poller.bus = executor.bus = bus
     listener = StreamListener(client, store, poller)
+    obs = Observability()
+    for component in (client, poller, intel, proposals, executor, listener):
+        component.obs = obs
+    intel.forecaster.on_score = obs.forecast_score
+    world.on_reset(lambda ev: obs.world_reset(ev.reason, ev.detail, ev.old_epoch_id, ev.new_epoch_id))
+    obs.bind(client=client, store=store, world=world, intel=intel, listener=listener, mode_fn=lambda: mode())
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        logs.configure(settings.log_json, settings.log_level)
         tasks = [asyncio.create_task(poller.run(), name="poller")]
         if settings.stream_enabled:
             tasks.append(asyncio.create_task(listener.run(), name="stream-listener"))
@@ -101,6 +110,8 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
     app.state.intel = intel
     app.state.executor = executor
     app.state.bus = bus
+    app.state.obs = obs
+    app.add_middleware(HttpTimingMiddleware, obs=obs)
     app.state.listener = listener
     app.state.db = db
 
@@ -209,6 +220,10 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
             return await executor.reject(proposal_id)
         except ApiError as exc:
             raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": exc.message}) from exc
+
+    @app.get("/metrics")
+    async def metrics_endpoint() -> Response:
+        return Response(obs.exposition(), media_type=CONTENT_TYPE)
 
     @app.get("/api/status")
     async def api_status() -> dict[str, Any]:

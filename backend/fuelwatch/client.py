@@ -29,6 +29,7 @@ import httpx
 from pydantic import TypeAdapter, ValidationError
 
 from .config import Settings
+from .metrics import NOOP, endpoint_name
 from .errors import (
     CircuitOpenError,
     MalformedResponse,
@@ -139,6 +140,8 @@ class SimulatorClient:
             for kind in (READ, WRITE)
         }
         self.retries_total = 0
+        self.retries_by_kind = {READ: 0, WRITE: 0}
+        self.obs: Any = NOOP
         self.retry_budget_exhausted_total = 0
 
     async def aclose(self) -> None:
@@ -181,6 +184,29 @@ class SimulatorClient:
         return self._rng.uniform(0.0, min(cap, base * (2 ** (attempt - 1))))
 
     async def _send(self, method: str, path: str, *, kind: str = READ, retries: int | None = None, **kwargs: Any) -> tuple[Any, bool]:
+        """Send with the resilience policy and report the final outcome, with its latency, to the observer."""
+        breaker = self._breakers[kind]
+        before, started, outcome = breaker.state.value, time.perf_counter(), "ok"
+        try:
+            return await self._send_policy(method, path, kind=kind, retries=retries, **kwargs)
+        except CircuitOpenError:
+            outcome = "circuit_open"
+            raise
+        except (SimulatorRejected, SimulatorNotFound):
+            outcome = "rejected"
+            raise
+        except (SimulatorInvalidRequest, MalformedResponse):
+            outcome = "invalid"
+            raise
+        except BaseException:
+            outcome = "transient"
+            raise
+        finally:
+            self.obs.request(endpoint_name(path), outcome, time.perf_counter() - started)
+            if breaker.state.value != before:
+                self.obs.breaker(kind, before, breaker.state.value)
+
+    async def _send_policy(self, method: str, path: str, *, kind: str = READ, retries: int | None = None, **kwargs: Any) -> tuple[Any, bool]:
         """Send with the resilience policy. Returns (parsed JSON, stale flag)."""
         if retries is None:
             retries = self._settings.write_attempts - 1 if kind == WRITE else self._settings.read_retries
@@ -214,6 +240,7 @@ class SimulatorClient:
                         raise
                     attempt += 1
                     self.retries_total += 1
+                    self.retries_by_kind[kind] += 1
                     await self._sleep(self._backoff(kind, attempt))
                     continue
                 except SimulatorError:

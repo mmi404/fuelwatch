@@ -21,7 +21,7 @@ set the uncertainty (and the accuracy figures) are honest one-step-ahead errors.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 
 from .models import Event, EventType, Region, Station
@@ -139,6 +139,7 @@ class DemandForecaster:
         self._series: dict[tuple[str, str], _Series] = {}
         self._last_tick: dict[tuple[str, str], int] = {}  # newest tick learned per station and fuel
         self.trained_through = -1  # newest tick learned anywhere
+        self.on_score: Callable[[float], None] | None = None  # told each one-step absolute percentage error
 
     def reset(self) -> None:
         """Drop everything learned: called when the world is reset."""
@@ -188,6 +189,8 @@ class DemandForecaster:
                 series.resid_sq += r * r
                 series.abs_pct_n += 1
                 series.abs_pct_sum += abs(demand - forecast) / demand
+                if self.on_score is not None:
+                    self.on_score(abs(demand - forecast) / demand)
                 s_rel = math.sqrt(series.sigma() ** 2 + series.eps_level() ** 2)
                 if abs(r) <= Z90 * s_rel:
                     series.covered += 1

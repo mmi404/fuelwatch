@@ -14,6 +14,7 @@ from .allocate import Plan, Shipment
 from .db import Database
 from .explain import build_explanation
 from .forecast import DemandForecaster
+from .metrics import NOOP
 from .snapshot import WorldSnapshot
 from .stockout import Assessment
 from .world import ResetEvent, WorldTracker
@@ -42,12 +43,14 @@ class ProposalService:
     def __init__(self, db: Database, world: WorldTracker) -> None:
         self._db = db
         self._world = world
+        self.obs = NOOP
         world.on_reset(self._on_reset)
 
     def _on_reset(self, event: ResetEvent) -> None:
         """A reset ends every open proposal and alert of the old world."""
         for p in self._db.proposals(epoch_id=event.old_epoch_id, statuses=OPEN, limit=1000):
-            self._db.set_proposal_status(p["id"], "EXPIRED", "world reset", only_from=OPEN)
+            if self._db.set_proposal_status(p["id"], "EXPIRED", "world reset", only_from=OPEN):
+                self.obs.proposal("EXPIRED", id=p["id"], reason="world reset")
         for a in self._db.alerts(epoch_id=event.old_epoch_id, states=ALERT_ACTIVE, limit=1000):
             self._db.set_alert_state(a["id"], "cleared")
 
@@ -64,6 +67,7 @@ class ProposalService:
         for key, p in list(open_now.items()):
             if p["expires_tick"] <= T and self._db.set_proposal_status(p["id"], "EXPIRED", "expired", only_from=OPEN):
                 counts["expired"] += 1
+                self.obs.proposal("EXPIRED", id=p["id"], reason="expired", expires_tick=p["expires_tick"])
                 del open_now[key]
 
         # A stale or torn snapshot must not create new advice; existing proposals simply wait.
@@ -80,6 +84,7 @@ class ProposalService:
         for key, p in open_now.items():
             if key not in grouped and self._db.set_proposal_status(p["id"], "SUPERSEDED", "no longer recommended", only_from=("PROPOSED",)):
                 counts["superseded"] += 1
+                self.obs.proposal("SUPERSEDED", id=p["id"], reason="no longer recommended")
 
         for key, shipments in grouped.items():
             old = open_now.get(key)
@@ -103,8 +108,10 @@ class ProposalService:
                 lines=[{"depot_id": s.depot_id, "station_id": s.station_id, "route_id": s.route_id, "fuel_type": s.fuel_type, "quantity": s.quantity} for s in shipments],
             )
             counts["created"] += 1
+            self.obs.proposal("PROPOSED", id=pid, station_id=key[0], fuel_type=key[1], liters=sum(s.quantity for s in shipments), confidence=score)
             if old is not None and self._db.set_proposal_status(old["id"], "SUPERSEDED", f"replaced by proposal {pid}", only_from=("PROPOSED",)):
                 counts["superseded"] += 1
+                self.obs.proposal("SUPERSEDED", id=old["id"], reason=f"replaced by proposal {pid}")
         return counts
 
     def recent(self, *, statuses: tuple[str, ...] | None = None, limit: int = 100) -> list[dict]:
