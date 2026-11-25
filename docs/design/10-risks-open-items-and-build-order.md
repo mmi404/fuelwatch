@@ -2,7 +2,7 @@
 
 ## 10.1 Where the project stands
 
-Nothing described in this design has been built yet. What exists is the study of the simulator ([../SIMULATOR_STATUS_FINDINGS.md](../SIMULATOR_STATUS_FINDINGS.md)), this design, and the showcase README. Every target and number below is therefore either a requirement or a calculation until it is measured.
+How much of this design exists is stated in the project README, which is the one place for implementation status. This document is the specification. Every target and number below is a requirement or a calculation until it is measured.
 
 ## 10.2 Non-functional targets: how each will be verified
 

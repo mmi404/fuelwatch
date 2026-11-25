@@ -4,7 +4,7 @@
 
 Built for the BUP CSE FEST 2026 hackathon on top of the organizer-provided BUP Fuel Supply Simulator. Python (FastAPI) backend, Next.js dashboard, Docker Compose, Prometheus and Grafana, k6.
 
-> **Status: design phase. Nothing is implemented yet.** The simulator has been explored and its behaviour documented ([findings](docs/SIMULATOR_STATUS_FINDINGS.md)), and the system has been designed in full ([docs/design](docs/design/README.md), also as a [PDF](docs/design/FuelWatch-Engineering-Design.pdf)). Everything below describes the target system. Commands, ports and file locations are intended, and every number marked TBD is not measured yet.
+> **Status: early implementation.** The simulator ingest layer exists under `backend/` (client, models, snapshot, poller, health probes, with unit tests). Everything else described here is design and is not built yet. The simulator's behaviour is documented in the [findings](docs/SIMULATOR_STATUS_FINDINGS.md) and the whole system is designed in [docs/design](docs/design/README.md) (also as a [PDF](docs/design/FuelWatch-Engineering-Design.pdf)). Commands, ports and every number marked TBD are intended or unmeasured.
 
 <!-- TODO before submission: replace with a real screenshot or a 20-second GIF of the dashboard during the final_combined crisis. -->
 ![Dashboard](docs/images/dashboard.png)
@@ -171,7 +171,7 @@ python -m bench.chaos --event route_disruption --route route-gazipur-mirpur
 
 ## Repository layout
 
-Target layout; only `docs/` and `simulator/` exist so far.
+Target layout; so far `backend/` (ingest layer only), `docs/` and `simulator/` exist.
 
 ```
 backend/        FastAPI service: ingest, snapshot, intelligence, decision, execution, ops

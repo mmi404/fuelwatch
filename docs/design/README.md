@@ -4,7 +4,7 @@ This is the design of FuelWatch: what it must do, how it is structured, how data
 
 ## How to read it
 
-This is a design for a system that has not been built yet. Sentences about behaviour describe what the system will do. Facts about the simulator carry a tag saying how they were established: `[code]` read in the simulator's source, `[live]` confirmed against a running simulator, `[inferred]` follows from the code but was not exercised. The evidence is in [../SIMULATOR_STATUS_FINDINGS.md](../SIMULATOR_STATUS_FINDINGS.md).
+This is the design of the whole system. Sentences about behaviour describe what the system will do; the project README states how much of it exists. Facts about the simulator carry a tag saying how they were established: `[code]` read in the simulator's source, `[live]` confirmed against a running simulator, `[inferred]` follows from the code but was not exercised. The evidence is in [../SIMULATOR_STATUS_FINDINGS.md](../SIMULATOR_STATUS_FINDINGS.md).
 
 Time is counted in **ticks** everywhere inside the system. Hours are derived from `tick_minutes`, which is read from the simulator at runtime and never assumed (the guide and the image disagree about the default).
 

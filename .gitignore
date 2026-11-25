@@ -6,3 +6,11 @@ plan/
 *.log
 .vscode/
 .claude/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.venv/
+*.db
