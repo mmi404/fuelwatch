@@ -69,7 +69,7 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
     db = db or Database(settings.database_path)
     world = WorldTracker(db, client)
     proposals = ProposalService(db, world)
-    intel = Intelligence(db, world, proposals=proposals)
+    intel = Intelligence(db, world, proposals=proposals, allocator=settings.allocator)
     executor = Executor(db, world, store, client, intel, settings, lambda: mode())
     poller = Poller(client, store, settings, world, intel, executor)
     executor.attach(poller)

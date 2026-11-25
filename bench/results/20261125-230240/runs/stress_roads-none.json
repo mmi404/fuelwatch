@@ -1,0 +1,22 @@
+{
+ "scenario": "stress_roads",
+ "policy": "none",
+ "ticks": 192,
+ "service_level": 0.3635,
+ "unmet_liters": 150392.8,
+ "served_liters": 85900.0,
+ "simulator_allocation_failures": 0,
+ "shipments_posted": 0,
+ "litres_shipped": 0.0,
+ "posts_rejected": {},
+ "litres_lost_at_arrival": 0.0,
+ "stockout_pair_hours": 421.0,
+ "decision_ms_mean": 8.91,
+ "decision_ms_p95": 10.92,
+ "history_hash": "d531cda573b084bc772a3786e2accf2bc9c0b561c3c122481c2d81c77727e518",
+ "wall_seconds": 54.4,
+ "allocations": [],
+ "policy_ms_mean": 0.02,
+ "policy_ms_p95": 0.03,
+ "policy_fallbacks": 0
+}

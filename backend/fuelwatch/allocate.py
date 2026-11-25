@@ -71,6 +71,8 @@ class Plan:
     shipments: tuple[Shipment, ...]
     shortfalls: tuple[Shortfall, ...]
     decisions: tuple[Decision, ...] = field(default=())
+    policy: str = "greedy"  # lp, greedy or rules: the policy that produced these shipments
+    fallback_from: str | None = None  # the policy that failed first, when this plan is a fallback
 
     @property
     def total_liters(self) -> int:
@@ -107,7 +109,8 @@ def _need(snapshot: WorldSnapshot, forecaster: DemandForecaster, station: Statio
     demand = window[-1].mean + Z75 * window[-1].sd
     later = sum(q for t, q in arrivals.items() if arrival < t < arrival + cfg.cover_ticks)
     uncapped = max(0.0, demand - low_stock - later)
-    headroom = max(0.0, cap - high_stock)
+    # Two limits: the tank at arrival (net of fuel on the road) and the tank now, which is what the simulator checks at POST time.
+    headroom = max(0.0, min(cap - high_stock, cap - inv))
     # A shipment smaller than `min_shipment` is not worth sending, unless the whole cover is smaller
     # than that (a slow-moving fuel): then half the cover is the smallest worth sending, otherwise
     # such a pair would never be topped up until its tank was already empty.
@@ -213,3 +216,42 @@ def plan_shipments(snapshot: WorldSnapshot, forecaster: DemandForecaster, assess
         decisions.append(Decision(a.station_id, a.fuel_type, a.level, a.hours_p90, round(first_need or 0.0, 1), float(sent), outcome, tuple(notes)))
 
     return Plan(T, tuple(shipments), tuple(shortfalls), tuple(decisions))
+
+
+def plan_rules(snapshot: WorldSnapshot, forecaster: DemandForecaster, assessments: list[Assessment]) -> Plan:
+    """The simplest policy (design 6.4, last fallback): top up every CRITICAL pair on its fastest open route.
+
+    Sends the most that the route, the depot, the dispatch capacity and the tank allow, one shipment per
+    pair, with no look-ahead.
+    """
+    T = snapshot.tick
+    stations = {s.id: s for s in snapshot.stations}
+    stock = {(d.id, f): float(q) for d in snapshot.depots for f, q in d.inventory.items()}
+    dispatch_left = {d.id: float(d.dispatch_capacity_per_tick) for d in snapshot.depots}
+    for a in snapshot.allocations:
+        if a.created_tick == T and a.status.value != "CANCELLED" and a.source_depot_id in dispatch_left:
+            dispatch_left[a.source_depot_id] = max(0.0, dispatch_left[a.source_depot_id] - a.quantity)
+    blocked = disrupted_route_ids(snapshot)
+    shipments: list[Shipment] = []
+    decisions: list[Decision] = []
+    for a in assessments:
+        station = stations.get(a.station_id)
+        if station is None or a.level != "CRITICAL" or station.status is StationStatus.OUTAGE:
+            continue
+        fuel = next(f for f in station.capacity if f.value == a.fuel_type)
+        arrivals = dict(inbound_by_tick(snapshot, station.id, fuel))
+        closed = outage_ticks(station, snapshot, T, 96)
+        routes = sorted((r for r in snapshot.routes if r.destination_station_id == station.id and r.id not in blocked and r.source_depot_id in dispatch_left), key=lambda r: (r.transit_ticks, r.id))
+        for route in routes:
+            head = headroom_liters(snapshot, forecaster, station, fuel, route, arrivals, closed)
+            limits = {"headroom": head, "route_max": route.max_shipment, "depot_stock": stock.get((route.source_depot_id, fuel), 0.0), "dispatch_capacity": dispatch_left[route.source_depot_id]}
+            binding = min(limits, key=limits.get)
+            qty = math.floor(limits[binding])
+            if qty < 500:
+                continue
+            shipments.append(Shipment(route.source_depot_id, station.id, route.id, a.fuel_type, qty, T + route.transit_ticks, binding))
+            stock[(route.source_depot_id, fuel)] -= qty
+            dispatch_left[route.source_depot_id] -= qty
+            decisions.append(Decision(a.station_id, a.fuel_type, a.level, a.hours_p90, float(qty), float(qty), "shipped", ("simple rules: fastest open route, as much as fits",)))
+            break
+    return Plan(T, tuple(shipments), (), tuple(decisions), policy="rules")

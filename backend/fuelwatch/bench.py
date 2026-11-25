@@ -28,12 +28,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .allocate import Plan, plan_shipments
+from .allocate import Plan, plan_rules, plan_shipments
 from .client import SimulatorClient
 from .config import Settings
 from .errors import SimulatorError, SimulatorRejected
 from .forecast import DemandForecaster
 from .models import AllocationRequest, AllocationStatus
+from .planner import plan_with_fallback
 from .snapshot import WorldSnapshot
 from .stockout import assess
 
@@ -55,7 +56,33 @@ SCENARIOS: dict[str, list[dict[str, Any]]] = {
         {"type": "shipment_delay", "start_tick": 10, "duration_ticks": 1, "parameters": {"depot_ids": ["depot-gazipur"], "fuel_types": ["DIESEL", "PETROL"], "delay_ticks": 8}},
         {"type": "route_disruption", "start_tick": 14, "duration_ticks": 10, "parameters": {"route_ids": ["route-gazipur-mirpur"]}},
     ],
+    # Harder worlds of our own (not simulator scenario files): they squeeze depot stock, routes and tanks together
+    # so the policies can differ. Parameters follow docs/SIMULATOR_STATUS_FINDINGS.md; an empty target list means everything.
+    "stress_crunch": [
+        {"type": "demand_spike", "start_tick": 8, "duration_ticks": 80, "parameters": {"multiplier": 3.0}},
+        {"type": "supply_shortfall", "start_tick": 1, "duration_ticks": 200, "parameters": {"factor": 0.2}},
+        {"type": "shipment_delay", "start_tick": 2, "duration_ticks": 1, "parameters": {"delay_ticks": 10}},
+    ],
+    "stress_roads": [
+        {"type": "route_disruption", "start_tick": 10, "duration_ticks": 40, "parameters": {"route_ids": ["route-gazipur-mirpur", "route-patiya-karnaphuli"]}},
+        {"type": "route_disruption", "start_tick": 30, "duration_ticks": 20, "parameters": {"route_ids": ["route-gazipur-tongi"]}},
+        {"type": "demand_spike", "start_tick": 12, "duration_ticks": 40, "parameters": {"multiplier": 2.2}},
+    ],
+    "stress_outage_rebound": [
+        {"type": "station_outage", "start_tick": 20, "duration_ticks": 12, "parameters": {"station_ids": ["station-tongi", "station-coxsbazar"]}},
+        {"type": "demand_spike", "start_tick": 32, "duration_ticks": 30, "parameters": {"multiplier": 2.5}},
+        {"type": "supply_shortfall", "start_tick": 5, "duration_ticks": 200, "parameters": {"factor": 0.3}},
+    ],
+    "stress_everything": [
+        {"type": "demand_spike", "start_tick": 6, "duration_ticks": 60, "parameters": {"multiplier": 2.6}},
+        {"type": "supply_shortfall", "start_tick": 1, "duration_ticks": 200, "parameters": {"factor": 0.25}},
+        {"type": "shipment_delay", "start_tick": 4, "duration_ticks": 1, "parameters": {"delay_ticks": 12}},
+        {"type": "route_disruption", "start_tick": 14, "duration_ticks": 30, "parameters": {"route_ids": ["route-gazipur-mirpur", "route-patiya-coxsbazar"]}},
+        {"type": "station_outage", "start_tick": 40, "duration_ticks": 8, "parameters": {"station_ids": ["station-karnaphuli"]}},
+    ],
 }
+STANDARD = ("baseline", "demand_spike", "supply_disruption", "final_combined")
+STRESS = tuple(name for name in SCENARIOS if name.startswith("stress_"))
 
 Policy = Callable[[WorldSnapshot, DemandForecaster, list], Plan]
 
@@ -68,7 +95,16 @@ def policy_greedy(snapshot: WorldSnapshot, forecaster: DemandForecaster, assessm
     return plan_shipments(snapshot, forecaster, assessments)
 
 
-POLICIES: dict[str, Policy] = {"none": policy_none, "greedy": policy_greedy}
+def policy_lp(snapshot: WorldSnapshot, forecaster: DemandForecaster, assessments: list) -> Plan:
+    """The live chain starting at the LP: a failure shows as plan.fallback_from, and the run counts it."""
+    return plan_with_fallback(snapshot, forecaster, assessments, "lp")[0]
+
+
+def policy_rules(snapshot: WorldSnapshot, forecaster: DemandForecaster, assessments: list) -> Plan:
+    return plan_rules(snapshot, forecaster, assessments)
+
+
+POLICIES: dict[str, Policy] = {"none": policy_none, "rules": policy_rules, "greedy": policy_greedy, "lp": policy_lp}
 
 
 @dataclass
@@ -90,6 +126,9 @@ class RunResult:
     history_hash: str
     wall_seconds: float
     allocations: list[dict[str, Any]] = field(default_factory=list)
+    policy_ms_mean: float = 0.0  # the policy alone, without the stockout assessment
+    policy_ms_p95: float = 0.0
+    policy_fallbacks: int = 0  # ticks where the policy failed and a simpler one answered
 
 
 def _p95(values: list[float]) -> float:
@@ -128,6 +167,8 @@ async def run_one(client: SimulatorClient, scenario: str, policy_name: str, hori
     first: WorldSnapshot | None = None
     snap: WorldSnapshot | None = None
     decision_ms: list[float] = []
+    policy_ms: list[float] = []
+    fallbacks = 0
     rejected: Counter[str] = Counter()
     posted = 0
     shipped = 0.0
@@ -140,8 +181,12 @@ async def run_one(client: SimulatorClient, scenario: str, policy_name: str, hori
         await _train(client, forecaster, snap, rows_per_tick)
         t0 = time.perf_counter()
         assessments = assess(snap, forecaster)
+        t1 = time.perf_counter()
         plan = policy(snap, forecaster, assessments)
-        decision_ms.append((time.perf_counter() - t0) * 1000)
+        done = time.perf_counter()
+        policy_ms.append((done - t1) * 1000)
+        decision_ms.append((done - t0) * 1000)
+        fallbacks += 1 if plan.fallback_from else 0
         for i, s in enumerate(plan.shipments):
             request = AllocationRequest(idempotency_key=f"bench-{scenario}-{policy_name}-{tick}-{i}", source_depot_id=s.depot_id, destination_station_id=s.station_id, route_id=s.route_id, fuel_type=s.fuel_type, quantity=float(s.quantity))
             try:
@@ -199,6 +244,9 @@ async def run_one(client: SimulatorClient, scenario: str, policy_name: str, hori
         history_hash=digest,
         wall_seconds=round(time.monotonic() - started, 1),
         allocations=[a.model_dump(mode="json") for a in final.allocations],
+        policy_ms_mean=round(statistics.fmean(policy_ms), 2),
+        policy_ms_p95=round(_p95(policy_ms), 2),
+        policy_fallbacks=fallbacks,
     )
 
 
@@ -210,9 +258,9 @@ def _git_commit() -> str:
 
 
 def markdown_table(results: list[RunResult]) -> str:
-    head = "| Scenario | Policy | Service level | Unmet L | Shipments | Litres shipped | Rejected POSTs | Failed allocations | Lost at arrival L | Stockout pair-hours | Decision p95 ms |\n|---|---|---|---|---|---|---|---|---|---|---|\n"
+    head = "| Scenario | Policy | Service level | Unmet L | Shipments | Litres shipped | Rejected POSTs | Failed allocations | Lost at arrival L | Stockout pair-hours | Policy p95 ms | Fallbacks |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n"
     rows = [
-        f"| {r.scenario} | {r.policy} | {r.service_level:.3f} | {r.unmet_liters:,.0f} | {r.shipments_posted} | {r.litres_shipped:,.0f} | {sum(r.posts_rejected.values())} | {r.simulator_allocation_failures} | {r.litres_lost_at_arrival:,.0f} | {r.stockout_pair_hours:g} | {r.decision_ms_p95:g} |"
+        f"| {r.scenario} | {r.policy} | {r.service_level:.3f} | {r.unmet_liters:,.0f} | {r.shipments_posted} | {r.litres_shipped:,.0f} | {sum(r.posts_rejected.values())} | {r.simulator_allocation_failures} | {r.litres_lost_at_arrival:,.0f} | {r.stockout_pair_hours:g} | {r.policy_ms_p95:g} | {r.policy_fallbacks} |"
         for r in results
     ]
     return head + "\n".join(rows) + "\n"
@@ -223,7 +271,8 @@ async def main_async(args: argparse.Namespace) -> int:
         print("refusing to reset the simulator on :8000 (the demo instance); start a second one on :8001 or pass --allow-primary", file=sys.stderr)
         return 2
     client = SimulatorClient(args.sim, settings=Settings(request_timeout=10.0))
-    scenarios = list(SCENARIOS) if args.scenarios == "all" else args.scenarios.split(",")
+    groups = {"all": tuple(SCENARIOS), "standard": STANDARD, "stress": STRESS}
+    scenarios = list(groups[args.scenarios]) if args.scenarios in groups else args.scenarios.split(",")
     policies = args.policies.split(",")
     for name in scenarios:
         if name not in SCENARIOS:
@@ -276,8 +325,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Replay benchmark on a dedicated simulator")
     parser.add_argument("--sim", default="http://localhost:8001")
     parser.add_argument("--horizon", type=int, default=HORIZON)
-    parser.add_argument("--scenarios", default="all")
-    parser.add_argument("--policies", default="none,greedy")
+    parser.add_argument("--scenarios", default="standard", help="standard, stress, all, or a comma list")
+    parser.add_argument("--policies", default="none,greedy", help=f"comma list of {", ".join(POLICIES)}")
     parser.add_argument("--out", default="bench/results")
     parser.add_argument("--repeat", action="store_true", help="re-run one scenario with greedy and compare the history hash")
     parser.add_argument("--repeat-scenario", default="final_combined")

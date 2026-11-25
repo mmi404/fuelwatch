@@ -167,31 +167,39 @@ Decision epoch `T`, horizon `H` ticks (48 initially, 12 simulated hours), relati
 |---|---|
 | `x(r, f, t) >= 0` | Litres shipped on route `r`, fuel `f`, at relative tick `t` (the decision) |
 | `u(s, f, t) >= 0` | Unmet demand |
-| `I(s, f, t)` | Station inventory after serving tick `t` |
-| `J(k, f, t)` | Depot inventory at the start of tick `t` |
+| `I(s, f, t)` | Station inventory after tick `t` |
+| `J(k, f, t)` | Depot inventory when the shipments of tick `t` are posted |
 | `g(k, f, t) >= 0` | Scheduled supply refused for lack of depot room |
-| `z(s, f) >= 0` | Shortfall below the safety stock at the horizon end |
+| `w(s, f, t) >= 0` | Fuel that would not fit in the tank on arrival (a slack, so the programme always has a solution) |
+| `z(s, f, t) >= 0` | How far stock after tick `t` is below the buffer (soft) |
 
 ```
 minimise   sum over s,f,t of  u(s,f,t)                        unmet litres (the score the simulator reports)
          + eps_ship   x sum of x(r,f,t)                        small cost, prevents pointless shipping
          + eps_lead   x sum of tau_r x x(r,f,t)                prefer fast routes among equals
          + c_waste    x sum of g(k,f,t)                        do not let a full depot refuse a delivery
-         + c_safety   x sum of z(s,f)                          do not run every tank to zero at the horizon end
+         + c_buffer   x sum of z(s,f,t)                        keep a buffer of stock at every tick, not only at the end
+         + c_hold     x sum of I(s,f,t)                        small cost of stock sitting in a tank, so shipping is not earlier than needed
+         + c_overflow x sum of w(s,f,t)                        very expensive: nothing should be lost at arrival
 
 subject to
   station balance   I(s,f,t) = I(s,f,t-1) + arrivals_known(s,f,t) + sum over r into s of x(r,f,t - tau_r) - (d_q(s,f,t) - u(s,f,t))
-  no loss           I(s,f,t-1) + arrivals_known(s,f,t) + sum x(r,f,t - tau_r)  <=  cap(s,f)
+  no loss           I(s,f,t-1) + arrivals_known(s,f,t) + sum x(r,f,t - tau_r) - w(s,f,t)  <=  cap(s,f)
   demand bound      u(s,f,t) <= d_q(s,f,t),   and  u = d_q  while the station is in outage
   depot balance     J(k,f,t+1) = J(k,f,t) - sum over r from k of x(r,f,t) + supply(k,f,t) - g(k,f,t),   J <= cap_depot
+  depot stock       sum over r from k of x(r,f,t)  <=  J(k,f,t)                              (the POST-time check, rule 6)
   dispatch          sum over r from k, all f of x(r,f,t)  <=  dispatch_capacity(k)        for every t
   route limit       x(r,f,t)  <=  m_r
   blocked           x(r,f,t) = 0   if route r is covered by a disruption at T+t, or the destination is in outage
-  safety stock      I(s,f,H-1) + z(s,f)  >=  safety(s,f)
+  buffer            I(s,f,t) + z(s,f,t)  >=  min(demand of the next B ticks at d_q, 0.85 x cap(s,f))        B = 24 ticks, like the greedy cover
   initial state     I(s,f,-1) = current inventory;  J(k,f,0) = current depot inventory
 ```
 
-`d_q` is the demand path at the chosen risk quantile (P80 initially; P50, P80 and P90 are compared in the benchmark). `arrivals_known` is fuel already on the road. `supply(k,f,t)` is the scheduled delivery list from the snapshot, with delays and shortfalls already applied.
+`d_q` is the demand path at the chosen risk quantile (P80). `arrivals_known` is fuel already on the road. `supply(k,f,t)` is the scheduled delivery list from the snapshot. The simulator applies a `shipment_delay` or `supply_shortfall` to the supply rows when the event starts, so rows already changed are used as they are, and an event that has not started yet is applied to the rows it will still find waiting. This is the one place the LP sees something the greedy policy does not: a delivery that is about to be delayed or cut.
+
+A shipment whose arrival falls after the horizon has no variable, since it cannot change anything inside it. A blocked route or a closed destination fixes the variable at zero for that tick. For the shipment that is posted now, a destination in `OUTAGE` is closed; for later ticks the outage events say which ticks are closed.
+
+Weights, in the units of the objective (model units are thousands of litres): unmet 1, buffer 0.2, holding 0.002, shipping 0.01 plus 0.002 per tick of transit, depot waste 0.05, overflow 5. They only need to keep the order *unmet demand, then buffer, then nothing pointless*. They were set once by reasoning and checked against the benchmark, not tuned on it.
 
 **Why this is a linear programme, not an integer one.** Quantities are continuous litres, and every constraint is linear. There is no yes-or-no decision, so no integer variables are needed: the solution is optimal and fast, and a mixed-integer solver would add a dependency and solve time for nothing. Integer behaviour (a minimum useful shipment of 500 L, rounding to whole litres) is applied after solving by a deterministic rounding step. If a minimum-lot rule ever has to be part of the optimisation, that is the point to add integer variables (ADR-06).
 
@@ -199,7 +207,7 @@ subject to
 
 **Commit rule.** Only the shipments at `t = 0` are executed (as proposals). The rest of the plan is discarded and recomputed at the next snapshot. This is what makes the policy robust to events that change the world mid-plan.
 
-**Rounding and posting.** Quantities are rounded down to whole litres and shipments under `min_shipment` are dropped. Each remaining shipment becomes a proposal line.
+**Rounding and posting.** The shipments of tick 0 only are taken, and only for pairs that are not `OK`, not `UNKNOWN` and not in outage, the same pairs the greedy policy acts on. Each is then clipped, in whole litres rounded down, to the route maximum, the depot stock left, the dispatch capacity left and the tank headroom at arrival on the low-demand path (the same headroom rule 8 uses for the greedy policy, since the LP plans on the P80 path and a lower real demand must not overflow the tank). The size that was limiting is recorded as `binding`. A line below the relative minimum shipment (the same floor as the greedy policy) is dropped.
 
 ### Fallback chain
 
@@ -207,7 +215,7 @@ subject to
 LP  --(infeasible, timeout over 1 s, or exception)-->  greedy  --(exception)-->  rules  --(exception)-->  no recommendation, with the reason shown
 ```
 
-`rules` is the simplest policy: for each `CRITICAL` pair, send `min(route max, headroom)` on the fastest open route. Each step down is counted (`fallback_activations_total`) and shown on the proposal.
+`rules` is the simplest policy: for each `CRITICAL` pair, send `min(route max, headroom, depot stock, dispatch left)` on the fastest open route, if that is at least 500 L. Each step down is counted (`fuelwatch_fallback_activations_total{component="allocator"}`), logged as `allocator.fallback`, stored as the proposal's `policy`, and lowers its confidence by 0.10. The LP's solve time limit is 1 s (`time_limit`), enforced by HiGHS. The policy to start from is the `ALLOCATOR` setting: `lp` (default), `greedy` or `rules`.
 
 ## 6.5 Anomaly detection
 
@@ -259,28 +267,67 @@ The simulator is deterministic, so the same crisis can be given to every policy.
 |---|---|
 | Scenarios | `baseline`, `demand_spike`, `supply_disruption`, `final_combined` (events replayed through `/admin/events`) |
 | Horizon | 192 ticks (two simulated days) |
-| Policies | `none`, `rules`, `greedy`, `lp` at P50, P80 and P90 |
+| Policies | `none`, `rules`, `greedy`, `lp` (P80 planning path) |
 | Headline metric | Service level from `/v1/metrics` (the simulator's own) and unmet litres |
 | Safety metrics | Failed allocations; litres lost to headroom (sent minus received); allocations rejected |
 | Operations metrics | Stockout station-hours (ticks with unmet demand x `tick_minutes` / 60, from demand history); litres shipped; policy decision time p95 |
 | Reproducibility | A hash of the final demand history is stored with each result; a re-run must reproduce it |
 | Fairness | Same replay, same seed, same horizon, a freshly reset simulator for every policy |
 
-Reference point already measured: with no actions, service level is 0.46 on the baseline. The benchmark's job is to show how far each policy rises above it, and where it still loses fuel.
+Reference point: with no actions, service level is 0.46 on the baseline. The benchmark's job is to show how far each policy rises above it, and where it still loses fuel.
 
 ### Measured results
 
-The runner is `python -m fuelwatch.bench` (`backend/fuelwatch/bench.py`). It refuses to reset the simulator on port 8000, so it runs on a second instance on port 8001 started from the same image. Each run begins with fault clearing, a pause and a reset, replays the scenario events through `/admin/events` (taken from the simulator's own scenario files), and then for every tick reads the world through the live client, trains the forecaster on the newest complete history ticks the way the live system does, asks the policy for shipments, posts them with their own keys, and steps. The runner currently supports the policies `none` and `greedy`. The saved output (`bench/results/20261125-221217/`, with every run's raw allocations and history hash) was produced on commit 3f54ab0 plus the runner, with horizon 192 ticks and seed 12345:
+The runner is `python -m fuelwatch.bench` (`backend/fuelwatch/bench.py`). It refuses to reset the simulator on port 8000, so it runs on a second instance on port 8001 started from the same image. Each run begins with fault clearing, a pause and a reset, replays the scenario events through `/admin/events`, and then for every tick reads the world through the live client, trains the forecaster on the newest complete history ticks the way the live system does, asks the policy for shipments, posts them with their own keys, and steps. The policies are the same code the live system runs: `none`, `rules`, `greedy` and `lp` (called through the fallback chain, so a failure would show in the `Fallbacks` column; there were none). All runs use horizon 192 ticks and simulator seed 12345. The LP plans on the P80 path only; the P50 and P90 variants named above were not run.
 
-| Scenario | Policy | Service level | Unmet L | Shipments | Litres shipped | Rejected POSTs | Failed allocations | Lost at arrival L | Stockout pair-hours | Decision p95 ms |
+**The four simulator scenarios.** Saved in `bench/results/20261125-221217/` (`none`) and `bench/results/20261125-232153/` (`greedy`, `lp`; raw allocations and history hashes in each `runs/` folder):
+
+| Scenario | Policy | Service level | Unmet L | Shipments | Litres shipped | Rejected POSTs | Failed allocations | Lost at arrival L | Stockout pair-hours | Policy p95 ms |
 |---|---|---|---|---|---|---|---|---|---|---|
-| baseline | none | 0.461 | 100,452 | 0 | 0 | 0 | 0 | 0 | 291.5 | 8.54 |
-| baseline | greedy | 1.000 | 0 | 128 | 113,848 | 0 | 0 | 0 | 0 | 9.58 |
-| demand_spike | none | 0.454 | 103,333 | 0 | 0 | 0 | 0 | 0 | 299.25 | 9.81 |
-| demand_spike | greedy | 1.000 | 0 | 130 | 115,758 | 0 | 0 | 0 | 0 | 10.15 |
-| supply_disruption | none | 0.461 | 100,452 | 0 | 0 | 0 | 0 | 0 | 291.5 | 7.83 |
-| supply_disruption | greedy | 1.000 | 0 | 128 | 113,848 | 0 | 0 | 0 | 0 | 9.22 |
-| final_combined | none | 0.453 | 103,916 | 0 | 0 | 0 | 0 | 0 | 300.25 | 10.19 |
-| final_combined | greedy | 1.000 | 0 | 130 | 116,043 | 0 | 0 | 0 | 0 | 14.68 |
+| baseline | none | 0.461 | 100,452 | 0 | 0 | 0 | 0 | 0 | 291.5 | n/a |
+| baseline | greedy | 1.000 | 0 | 128 | 113,848 | 0 | 0 | 0 | 0 | 3.5 |
+| baseline | lp | 1.000 | 0 | 130 | 115,120 | 0 | 0 | 0 | 0 | 182 |
+| demand_spike | none | 0.454 | 103,333 | 0 | 0 | 0 | 0 | 0 | 299.25 | n/a |
+| demand_spike | greedy | 1.000 | 0 | 130 | 115,758 | 0 | 0 | 0 | 0 | 3.5 |
+| demand_spike | lp | 1.000 | 0 | 133 | 118,171 | 0 | 0 | 0 | 0 | 182 |
+| supply_disruption | none | 0.461 | 100,452 | 0 | 0 | 0 | 0 | 0 | 291.5 | n/a |
+| supply_disruption | greedy | 1.000 | 0 | 128 | 113,848 | 0 | 0 | 0 | 0 | 3.5 |
+| supply_disruption | lp | 1.000 | 0 | 130 | 115,120 | 0 | 0 | 0 | 0 | 174 |
+| final_combined | none | 0.453 | 103,916 | 0 | 0 | 0 | 0 | 0 | 300.25 | n/a |
+| final_combined | greedy | 1.000 | 0 | 130 | 116,043 | 0 | 0 | 0 | 0 | 3.6 |
+| final_combined | lp | 1.000 | 0 | 134 | 118,915 | 0 | 0 | 0 | 0 | 174 |
 
-A second run of `final_combined` with `greedy` produced the identical demand-history hash and service level. Three things limit what this shows. The runs have no injected faults, so they say nothing about resilience; they are one seed; and the scenarios are gentle for a policy that has full information at every tick, since depots start with plenty of stock and no station is far from one. The `supply_disruption` scenario changes nothing for either policy because the delayed and reduced depot deliveries never mattered while depot stock stayed high. A harder comparison (smaller depot stock, longer horizons, faults and several seeds) is where `lp` has a chance to show a difference, and where greedy may lose fuel.
+These four are gentle: depots start with plenty of stock, so greedy already serves everything and the LP cannot do better. The `supply_disruption` scenario changes nothing for either policy because the delayed and reduced depot deliveries never mattered while depot stock stayed high. A second run of `final_combined` with `greedy` on the earlier run reproduced the identical demand-history hash and service level.
+
+**Four harder worlds of our own** (`stress_*` in `bench.py`, built from the same event types: they squeeze depot supply, routes and tanks together). Saved in `bench/results/20261125-230240/`:
+
+| Scenario | What happens | Policy | Service level | Unmet L | Shipments | Litres shipped | Lost at arrival L | Stockout pair-hours | Policy p95 ms |
+|---|---|---|---|---|---|---|---|---|---|
+| stress_crunch | demand x3 everywhere for 80 ticks, all supply cut to 20%, deliveries delayed 10 ticks | none | 0.243 | 267,302 | 0 | 0 | 0 | 461 | n/a |
+| | | rules | 0.985 | 5,200 | 51 | 281,372 | 0 | 15.25 | 1.5 |
+| | | greedy | 0.989 | 3,982 | 263 | 274,349 | 0 | 11 | 4.8 |
+| | | lp | **0.995** | 1,856 | 264 | 274,851 | 0 | 6.25 | 228 |
+| stress_roads | two routes down for 40 ticks, a third for 20, demand x2.2 | none | 0.363 | 150,393 | 0 | 0 | 0 | 421 | n/a |
+| | | rules | 1.000 | 0 | 34 | 211,855 | 0 | 0 | 0.4 |
+| | | greedy | 1.000 | 0 | 181 | 163,821 | 0 | 0 | 4.1 |
+| | | lp | 1.000 | 0 | 183 | 165,031 | 0 | 0 | 187 |
+| stress_outage_rebound | two stations closed for 12 ticks, then demand x2.5, supply cut to 30% | none | 0.362 | 151,624 | 0 | 0 | 0 | 415.25 | n/a |
+| | | rules | 0.972 | 6,608 | 29 | 188,392 | 0 | 19.5 | 0.4 |
+| | | greedy | 0.972 | 6,608 | 174 | 157,276 | 0 | 19.5 | 3.9 |
+| | | lp | 0.972 | 6,608 | 174 | 158,983 | 0 | 19.5 | 194 |
+| stress_everything | demand x2.6, supply cut to 25%, deliveries delayed 12 ticks, two routes down for 30 ticks, one station closed for 8 | none | 0.303 | 197,535 | 0 | 0 | 0 | 452.5 | n/a |
+| | | rules | 0.969 | 8,709 | 40 | 229,771 | 49 | 12.5 | 0.5 |
+| | | greedy | 0.970 | 8,379 | 206 | 201,049 | 0 | 10.25 | 4.1 |
+| | | lp | **0.981** | 5,374 | 210 | 206,125 | 0 | 6.75 | 211 |
+
+No run had a rejected POST or a failed allocation. The shape of the result:
+
+1. Every policy is far above doing nothing (0.24 to 0.36 there).
+2. The LP is never worse than greedy in these eight runs, and better in the two worlds where depot stock is scarce: 0.995 against 0.989 in `stress_crunch` (unmet fuel more than halved, 1,856 L against 3,982 L) and 0.981 against 0.970 in `stress_everything` (5,374 L against 8,379 L). In `stress_outage_rebound` the 6,608 L unmet is identical for all three policies, which fits fuel that nobody could have delivered because the station was closed.
+3. The gain is small in absolute terms: about one percentage point of service level at most. The honest reading is that greedy is already a strong policy on this simulator, and the LP earns its keep only when depot supply is the limit.
+4. The simplest `rules` policy is better than expected: it matches greedy in `stress_outage_rebound` and `stress_roads` and loses at most 0.4 points elsewhere, with 49 L lost at arrival in one world. It ships large lots (fewer shipments, more litres), which is why it is a sound last fallback.
+5. The LP's time is about 190 to 230 ms at p95 per decision against 4 ms for greedy. That is well inside the 1 s limit and the 500 ms poll cycle's slack, but it is fifty times slower, which is why the chain keeps greedy as the fallback.
+
+On the live simulator (port 8000, baseline, autopilot on, `lp` policy), 130 ticks gave a service level of 1.000, no failed allocation and no fallback; assessment plus LP took 159 ms on average per snapshot (`[live]`).
+
+Limits that remain: one simulator seed and one run per cell (no confidence intervals); no injected faults in the benchmark; the weights of the LP were set by reasoning and not tuned, so a better weighting may exist; and the stress worlds are our own, chosen to be hard, not the simulator's scenario files.

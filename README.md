@@ -4,7 +4,7 @@
 
 Built for the BUP CSE FEST 2026 hackathon on top of the organizer-provided BUP Fuel Supply Simulator. Python (FastAPI) backend, Next.js dashboard, Docker Compose, Prometheus and Grafana, k6.
 
-> **Status: early implementation.** The simulator ingest layer exists under `backend/` (client, models, snapshot, poller, health probes) together with its resilience layer (per-request retries with a budget, a concurrency cap, circuit breakers, the LIVE/DEGRADED/STALE/STARTING mode and one error shape), plus SQLite persistence of world epochs, reset detection and the demand history, an online-learned demand forecaster and a stockout estimator served at `/api/risks` and `/api/forecast`, a rules-and-greedy allocator, and proposals with explanation cards and stockout alerts stored in SQLite and served at `/api/proposals` and `/api/alerts`, and approval and rejection with an execution gate, re-validation, idempotent sending, a ledger and an audit log, behind `X-Operator-Token`, an autopilot with guard limits, demo controls proxied to the simulator, a ledger, audit and status API, the simulator's tick stream used as a refresh hint, and a server-sent events stream for the browser, with unit tests. A replay benchmark runner (`python -m fuelwatch.bench`) compares the no-action and greedy policies on four scenarios; its saved results are in [bench/results](bench/results) (one seed, no injected faults). Prometheus metrics at `/metrics` (the simulator-call, breaker, snapshot, risk, proposal, allocation and API-latency series; litres lost at arrival is not exported yet) and structured JSON logs with request ids. Everything else described here is design and is not built yet. The simulator's behaviour is documented in the [findings](docs/SIMULATOR_STATUS_FINDINGS.md) and the whole system is designed in [docs/design](docs/design/README.md) (also as a [PDF](docs/design/FuelWatch-Engineering-Design.pdf)). Commands, ports and every number marked TBD are intended or unmeasured.
+> **Status: early implementation.** The simulator ingest layer exists under `backend/` (client, models, snapshot, poller, health probes) together with its resilience layer (per-request retries with a budget, a concurrency cap, circuit breakers, the LIVE/DEGRADED/STALE/STARTING mode and one error shape), plus SQLite persistence of world epochs, reset detection and the demand history, an online-learned demand forecaster and a stockout estimator served at `/api/risks` and `/api/forecast`, an allocator chain (a rolling-horizon linear programme solved with SciPy HiGHS, falling back to a cover-based greedy policy and then to simple rules), and proposals with explanation cards and stockout alerts stored in SQLite and served at `/api/proposals` and `/api/alerts`, and approval and rejection with an execution gate, re-validation, idempotent sending, a ledger and an audit log, behind `X-Operator-Token`, an autopilot with guard limits, demo controls proxied to the simulator, a ledger, audit and status API, the simulator's tick stream used as a refresh hint, and a server-sent events stream for the browser, with unit tests. A replay benchmark runner (`python -m fuelwatch.bench`) compares the none, rules, greedy and LP policies on the four simulator scenarios and four harder worlds of our own; its saved results are in [bench/results](bench/results) (one seed, no injected faults). Prometheus metrics at `/metrics` (the simulator-call, breaker, snapshot, risk, proposal, allocation and API-latency series; litres lost at arrival is not exported yet) and structured JSON logs with request ids. Everything else described here is design and is not built yet. The simulator's behaviour is documented in the [findings](docs/SIMULATOR_STATUS_FINDINGS.md) and the whole system is designed in [docs/design](docs/design/README.md) (also as a [PDF](docs/design/FuelWatch-Engineering-Design.pdf)). Commands, ports and every number marked TBD are intended or unmeasured.
 
 <!-- TODO before submission: replace with a real screenshot or a 20-second GIF of the dashboard during the final_combined crisis. -->
 ![Dashboard](docs/images/dashboard.png)
@@ -78,15 +78,19 @@ Four of the design rules, each earned from testing the simulator (full evidence 
 
 The simulator is deterministic, so every policy is tested on identical replays: reset, inject the same crisis, step the same number of ticks, score.
 
-<!-- TODO: fill from bench/replay output. Do not publish numbers that were not measured. -->
+Measured with `python -m fuelwatch.bench` on a second simulator (seed 12345, 192 ticks, no injected faults, one run per cell). Raw output, including every allocation, is in [bench/results](bench/results).
 
-| Policy | Service level | Unmet litres | Failed allocations | Stockout station-hours |
+The four simulator scenarios are gentle (depots start with plenty of stock), so greedy and the LP both reach a service level of 1.000 in all four, against 0.45 to 0.46 for no action. To see the policies differ we built four harder worlds that squeeze depot supply, routes and tanks together:
+
+| World | Do nothing | Simple rules | Greedy | LP optimizer |
 |---|---|---|---|---|
-| Do nothing | 0.46 (measured, 192 ticks, baseline) | ~100,000 | 0 | TBD |
-| Greedy | TBD | TBD | TBD | TBD |
-| LP optimizer | TBD | TBD | TBD | TBD |
+| `stress_crunch` (demand x3, supply cut to 20%) | 0.243 | 0.985 | 0.989 | **0.995** (1,856 L unmet, greedy 3,982 L) |
+| `stress_roads` (three routes down, demand x2.2) | 0.363 | 1.000 | 1.000 | 1.000 |
+| `stress_outage_rebound` (two stations closed, then a x2.5 rebound) | 0.362 | 0.972 | 0.972 | 0.972 |
+| `stress_everything` (all of the above, together) | 0.303 | 0.969 | 0.970 | **0.981** (5,374 L unmet, greedy 8,379 L) |
 
-Scenario for the headline run: `final_combined`: a Dhaka demand spike (x1.7 for 16 ticks), a Gazipur diesel and petrol shipment delayed 8 ticks, and the Gazipur to Mirpur route disrupted for 10 ticks.
+Service level, the simulator's own metric. No run had a rejected POST, a failed allocation or fuel lost at arrival (except 49 L for the simple rules in `stress_everything`). The LP is never worse than greedy here and better where depot supply is the limit, by about one percentage point at most; the greedy policy is already strong on this simulator. The LP takes about 0.2 s per decision at p95 against 4 ms for greedy. Full tables, limits and what was not measured are in [design 6.8](docs/design/06-algorithms.md).
+
 
 ## Built to fail gracefully
 
@@ -146,7 +150,7 @@ The simulator starts paused. Press **Run** in the dashboard, or step it manually
 
 ```bash
 docker compose --profile bench up -d       # second simulator on :8001, so the demo world is untouched
-python -m bench.replay --scenario final_combined --policies none,greedy,lp
+cd backend && python -m fuelwatch.bench --sim http://localhost:8001 --scenarios stress --policies none,rules,greedy,lp --out ../bench/results
 ```
 
 ### Reproduce the load test

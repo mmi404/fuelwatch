@@ -18,7 +18,7 @@ CONFIDENCE_HIGH, CONFIDENCE_MEDIUM = 0.8, 0.5
 _ARRIVAL_WINDOW = 48  # ticks of scheduled supply shown on the card
 
 
-def confidence(assessment: Assessment, snapshot: WorldSnapshot, accuracy: dict[str, object]) -> tuple[float, str, list[str]]:
+def confidence(assessment: Assessment, snapshot: WorldSnapshot, accuracy: dict[str, object], fallback_from: str | None = None) -> tuple[float, str, list[str]]:
     """Start at 1.0 and subtract the reductions of design 6.7 that apply."""
     score, reasons = 1.0, []
     if assessment.confidence != "normal":
@@ -31,6 +31,9 @@ def confidence(assessment: Assessment, snapshot: WorldSnapshot, accuracy: dict[s
     if isinstance(coverage, float) and scored >= COVERAGE_MIN_SCORED and not (COVERAGE_BAND[0] <= coverage <= COVERAGE_BAND[1]):
         score -= 0.10
         reasons.append(f"recent forecast coverage is {coverage:.0%}, outside {COVERAGE_BAND[0]:.0%} to {COVERAGE_BAND[1]:.0%}")
+    if fallback_from:
+        score -= 0.10
+        reasons.append(f"the {fallback_from} allocator failed and a simpler policy produced this plan")
     score = round(max(0.0, score), 2)
     level = "High" if score >= CONFIDENCE_HIGH else "Medium" if score >= CONFIDENCE_MEDIUM else "Low"
     if not reasons:
@@ -68,6 +71,7 @@ def build_explanation(
     shipments: list[Shipment],
     shortfalls: list[Shortfall],
     accuracy: dict[str, object],
+    fallback_from: str | None = None,
 ) -> tuple[dict[str, object], float, float | None, float | None]:
     """The card, plus the confidence score and the risk before and after."""
     T = snapshot.tick
@@ -101,7 +105,7 @@ def build_explanation(
         alt = what_if(snapshot, forecaster, station.id, fuel, {T + r.transit_ticks: qty})
         alternatives.append({"option": "other_route", "route_id": r.id, "depot_id": r.source_depot_id, "liters": int(qty), "arrival_tick": T + r.transit_ticks, "outlook": _outlook(alt)})
 
-    score, level, reasons = confidence(assessment, snapshot, accuracy)
+    score, level, reasons = confidence(assessment, snapshot, accuracy, fallback_from)
     cumulative = forecaster.cumulative(station, fuel, T, max(1, max((s.arrival_tick - T for s in shipments), default=1)), snapshot.tick_minutes, snapshot.events)
     to_arrival = cumulative[-1] if cumulative else None
     last_arrival = max((s.arrival_tick for s in shipments), default=T)

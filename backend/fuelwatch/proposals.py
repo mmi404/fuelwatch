@@ -21,7 +21,6 @@ from .world import ResetEvent, WorldTracker
 
 log = logging.getLogger("fuelwatch.proposals")
 
-POLICY = "greedy"
 EXPIRY_TICKS = 40  # ten simulated hours; re-validation, not expiry, protects correctness (ADR-07)
 SAME_ABS_LITERS = 500.0  # a refreshed plan within this many litres, or SAME_RELATIVE of the old total, is "the same"
 SAME_RELATIVE = 0.15
@@ -92,7 +91,7 @@ class ProposalService:
                 counts["kept"] += 1
                 continue
             card, score, risk_before, risk_after = build_explanation(
-                snapshot, forecaster, by_pair[key], decisions.get(key), shipments, [f for f in plan.shortfalls if (f.station_id, f.fuel_type) == key], accuracy
+                snapshot, forecaster, by_pair[key], decisions.get(key), shipments, [f for f in plan.shortfalls if (f.station_id, f.fuel_type) == key], accuracy, plan.fallback_from
             )
             pid = self._db.insert_proposal(
                 epoch_id=epoch.id,
@@ -100,7 +99,7 @@ class ProposalService:
                 fuel_type=key[1],
                 snapshot_tick=T,
                 expires_tick=T + EXPIRY_TICKS,
-                policy=POLICY,
+                policy=plan.policy,
                 confidence=score,
                 risk_before=risk_before,
                 risk_after=risk_after,

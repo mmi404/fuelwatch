@@ -58,7 +58,7 @@ def test_metrics_endpoint_reports_the_catalogue_and_stays_within_the_series_budg
     assert sample(text, "fuelwatch_stream_state", state="DISCONNECTED") == 1
     assert sample(text, "fuelwatch_proposals_total", status="proposed") >= 1 and sample(text, "fuelwatch_proposals_total", status="approved") == 1
     assert sample(text, "fuelwatch_proposals_total", status="executed") == 1
-    assert sample(text, "fuelwatch_decision_seconds_count", policy="greedy") >= 1
+    assert sample(text, "fuelwatch_decision_seconds_count", policy="lp") >= 1
     assert sample(text, "fuelwatch_http_request_seconds_count", route="/api/proposals/{proposal_id}/approve", method="POST", status_class="2xx") == 1
     assert sample(text, "fuelwatch_http_request_seconds_count", route="/api/proposals", method="GET", status_class="2xx") >= 1
     assert sample(text, "fuelwatch_http_request_seconds_count", route="/metrics") is None  # a scrape does not time itself

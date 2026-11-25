@@ -31,6 +31,8 @@ class Settings:
     # One JSON object per log line. Off in the dataclass so unit tests keep plain output; `from_env` turns it on.
     log_json: bool = False
     log_level: str = "INFO"
+    # Allocation policy: "lp" (rolling-horizon linear programme, falling back to greedy then rules), "greedy" or "rules".
+    allocator: str = "lp"
     # Attempts to obtain a snapshot whose tick did not move during the read.
     torn_read_attempts: int = 3
     # A whole world read that takes longer than this is abandoned: it would be too old to publish.

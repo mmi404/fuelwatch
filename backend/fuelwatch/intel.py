@@ -12,10 +12,11 @@ import time
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 
-from .allocate import Plan, plan_shipments
+from .allocate import Plan
 from .db import Database
 from .forecast import Z90, DemandForecaster, hour_of_day
 from .metrics import NOOP
+from .planner import plan_with_fallback
 from .snapshot import WorldSnapshot
 from .stockout import Assessment, assess
 from .world import ResetEvent, WorldTracker
@@ -27,7 +28,8 @@ log = logging.getLogger("fuelwatch.intel")
 
 
 class Intelligence:
-    def __init__(self, db: Database, world: WorldTracker, forecaster: DemandForecaster | None = None, proposals: "ProposalService | None" = None) -> None:
+    def __init__(self, db: Database, world: WorldTracker, forecaster: DemandForecaster | None = None, proposals: "ProposalService | None" = None, allocator: str = "greedy") -> None:
+        self._allocator = allocator
         self._db = db
         self._proposals = proposals
         self.plan: Plan | None = None
@@ -72,8 +74,8 @@ class Intelligence:
             return
         try:
             assessments = list(self.assessments)
-            self.plan = plan_shipments(snap, self.forecaster, assessments)
-            self.obs.decision("greedy", time.perf_counter() - decided)
+            self.plan, _ = await asyncio.to_thread(plan_with_fallback, snap, self.forecaster, assessments, self._allocator, self.obs)
+            self.obs.decision(self.plan.policy, time.perf_counter() - decided)
             self.proposal_counts = await asyncio.to_thread(self._sync_proposals, snap, assessments, self.plan)
         except Exception as exc:  # advice is optional: a failure here never hides the risk view
             self.last_error = repr(exc)
