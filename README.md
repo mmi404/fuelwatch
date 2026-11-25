@@ -4,7 +4,7 @@
 
 Built for the BUP CSE FEST 2026 hackathon on top of the organizer-provided BUP Fuel Supply Simulator. Python (FastAPI) backend, Next.js dashboard, Docker Compose, Prometheus and Grafana, k6.
 
-> **Status: early implementation.** The simulator ingest layer exists under `backend/` (client, models, snapshot, poller, health probes, with unit tests). Everything else described here is design and is not built yet. The simulator's behaviour is documented in the [findings](docs/SIMULATOR_STATUS_FINDINGS.md) and the whole system is designed in [docs/design](docs/design/README.md) (also as a [PDF](docs/design/FuelWatch-Engineering-Design.pdf)). Commands, ports and every number marked TBD are intended or unmeasured.
+> **Status: early implementation.** The simulator ingest layer exists under `backend/` (client, models, snapshot, poller, health probes) together with its resilience layer (per-request retries with a budget, a concurrency cap, circuit breakers, the LIVE/DEGRADED/STALE/STARTING mode and one error shape), with unit tests. Everything else described here is design and is not built yet. The simulator's behaviour is documented in the [findings](docs/SIMULATOR_STATUS_FINDINGS.md) and the whole system is designed in [docs/design](docs/design/README.md) (also as a [PDF](docs/design/FuelWatch-Engineering-Design.pdf)). Commands, ports and every number marked TBD are intended or unmeasured.
 
 <!-- TODO before submission: replace with a real screenshot or a 20-second GIF of the dashboard during the final_combined crisis. -->
 ![Dashboard](docs/images/dashboard.png)

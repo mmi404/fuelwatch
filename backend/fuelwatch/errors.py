@@ -39,6 +39,10 @@ class SimulatorUnavailable(SimulatorError):
     transient = True
 
 
+class CircuitOpenError(SimulatorUnavailable):
+    """The circuit breaker refused the call; nothing was sent. Counts as unavailable."""
+
+
 class SimulatorRejected(SimulatorError):
     """A 409 business-rule rejection, for example ROUTE_CAPACITY_EXCEEDED."""
 

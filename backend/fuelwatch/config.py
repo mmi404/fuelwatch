@@ -1,13 +1,13 @@
-"""Runtime configuration, read from environment variables."""
+"""Runtime configuration, read from environment variables.
+
+Every field can be overridden by the environment variable of the same name in
+upper case, for example `POLL_INTERVAL=1.0`. Defaults follow the design (part 8.2).
+"""
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
-
-
-def _float(name: str, default: float) -> float:
-    return float(os.environ.get(name, default))
+from dataclasses import dataclass, fields
 
 
 @dataclass(frozen=True)
@@ -19,18 +19,46 @@ class Settings:
     poll_interval: float = 0.5
     # Re-read the whole world at least this often even if the tick did not move.
     refresh_max_age: float = 5.0
-    # /readyz reports not ready when the snapshot is older than this many seconds.
+    # Snapshots older than this many seconds are STALE and /readyz reports not ready.
     ready_max_age: float = 15.0
     # Attempts to obtain a snapshot whose tick did not move during the read.
     torn_read_attempts: int = 3
+    # A whole world read that takes longer than this is abandoned: it would be too old to publish.
+    world_deadline: float = 5.0
+
+    # Retries: reads retry twice, writes (idempotent by key) up to three attempts in total.
+    read_retries: int = 2
+    read_backoff_base: float = 0.1
+    read_backoff_cap: float = 1.0
+    write_attempts: int = 3
+    write_backoff_base: float = 0.2
+    write_backoff_cap: float = 2.0
+    # Retry budget: retries at most this fraction of requests in a rolling window,
+    # with a floor so a quiet system can still retry.
+    retry_budget_fraction: float = 0.4
+    retry_budget_window: float = 30.0
+    retry_budget_floor: int = 3
+
+    # Most requests in flight to the simulator at once (it reset a connection at 50).
+    max_in_flight: int = 8
+
+    # Circuit breakers.
+    breaker_consecutive_failures: int = 5
+    breaker_failure_rate: float = 0.5
+    breaker_min_calls: int = 10
+    breaker_window: float = 30.0
+    breaker_cooldown: float = 5.0
+    breaker_max_cooldown: float = 30.0
+    breaker_probes_needed: int = 2
 
     @classmethod
     def from_env(cls) -> Settings:
-        return cls(
-            simulator_url=os.environ.get("SIMULATOR_URL", cls.simulator_url).rstrip("/"),
-            request_timeout=_float("REQUEST_TIMEOUT", cls.request_timeout),
-            poll_interval=_float("POLL_INTERVAL", cls.poll_interval),
-            refresh_max_age=_float("REFRESH_MAX_AGE", cls.refresh_max_age),
-            ready_max_age=_float("READY_MAX_AGE", cls.ready_max_age),
-            torn_read_attempts=int(os.environ.get("TORN_READ_ATTEMPTS", cls.torn_read_attempts)),
-        )
+        values: dict[str, object] = {}
+        for f in fields(cls):
+            raw = os.environ.get(f.name.upper())
+            if raw is None:
+                continue
+            kind = type(f.default)
+            values[f.name] = kind(raw)
+        settings = cls(**values)  # type: ignore[arg-type]
+        return cls(**{**values, "simulator_url": settings.simulator_url.rstrip("/")})  # type: ignore[arg-type]

@@ -13,7 +13,7 @@ from fuelwatch.errors import (
 )
 from fuelwatch.models import AllocationRequest, FuelType
 
-from .conftest import make_world, transport_for
+from .conftest import FakeClock, Sleeps, make_world, transport_for
 
 
 def run(coro):
@@ -70,7 +70,7 @@ def test_network_error_becomes_transient_unavailable():
     def boom(request):
         raise httpx.ConnectError("refused")
 
-    client = SimulatorClient("http://sim", transport=httpx.MockTransport(boom))
+    client = SimulatorClient("http://sim", transport=httpx.MockTransport(boom), sleep=Sleeps())
     with pytest.raises(SimulatorUnavailable) as err:
         run(client.instance())
     assert err.value.transient is True
@@ -80,7 +80,7 @@ def test_timeout_becomes_transient_unavailable():
     def slow(request):
         raise httpx.ReadTimeout("slow")
 
-    client = SimulatorClient("http://sim", transport=httpx.MockTransport(slow))
+    client = SimulatorClient("http://sim", transport=httpx.MockTransport(slow), sleep=Sleeps())
     with pytest.raises(SimulatorUnavailable):
         run(client.instance())
 

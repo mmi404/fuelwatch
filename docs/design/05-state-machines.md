@@ -89,6 +89,7 @@ One breaker per call class (reads, writes, stream connect) so a failing class do
 ```mermaid
 %%{init: {"themeVariables": {"fontSize": "18px"}}}%%
 stateDiagram-v2
+  direction LR
   [*] --> CLOSED
   CLOSED --> OPEN : failures over threshold
   OPEN --> HALF_OPEN : cool-down over
@@ -96,14 +97,16 @@ stateDiagram-v2
   HALF_OPEN --> OPEN : a probe fails
 ```
 
-*Figure 5.4. Only transient errors count as failures; a 409 means the simulator is healthy and said no.*
+*Figure 5.4. Only transient errors count as failures; a 409 means the simulator is healthy and said no. A request counts once, by its final outcome after its retries.*
 
 | Transition | Initial threshold (tuned by the chaos drills) |
 |---|---|
-| `CLOSED` to `OPEN` | 5 consecutive failures, or a failure rate of 50% or more over at least 10 calls in 30 s |
+| `CLOSED` to `OPEN` | 5 consecutive failed requests, or a failure rate of 50% or more over at least 10 requests in 30 s |
 | `OPEN` to `HALF_OPEN` | Cool-down of 5 s |
 | `HALF_OPEN` to `CLOSED` | 2 consecutive probes succeed |
 | `HALF_OPEN` to `OPEN` | Any probe fails; the cool-down doubles up to 30 s |
+
+Two rules keep the breaker honest. It counts requests after their retries, not attempts: retries already absorb a single failed attempt, and counting attempts opened the breaker during a live run at the simulator's default 24% error rate (`[live]`, 80 of 100 refreshes refused), which is exactly the fault the system must ride through. A probe is sent once and not retried, because its job is to find out whether the simulator is back, and a request cancelled before it finishes (for example by the world deadline) counts as a failure so it cannot leave a probe stuck.
 
 ## 5.4 System health mode
 

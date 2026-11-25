@@ -126,6 +126,29 @@ def make_world(tick: int = 0) -> dict[str, Any]:
 Handler = Callable[[httpx.Request], httpx.Response]
 
 
+class FakeClock:
+    """A clock tests can move by hand, so breaker cool-downs and budgets need no waiting."""
+
+    def __init__(self, now: float = 1000.0) -> None:
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+class Sleeps:
+    """A fake sleep that records each requested delay and returns immediately."""
+
+    def __init__(self) -> None:
+        self.delays: list[float] = []
+
+    async def __call__(self, seconds: float) -> None:
+        self.delays.append(seconds)
+
+
 @pytest.fixture
 def world() -> Callable[..., dict[str, Any]]:
     return make_world

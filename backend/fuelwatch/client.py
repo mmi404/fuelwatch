@@ -2,22 +2,34 @@
 
 Responsibilities: timeouts, normalising the simulator's two error shapes into
 typed exceptions, surfacing the ``X-Simulator-Stale`` header, validating every
-payload against the models, and reading a whole consistent world.
+payload against the models, reading a whole consistent world, and the resilience
+policy of design part 8.2:
 
-Retries and the circuit breaker are layered on top of this later; the client
-only classifies errors (``SimulatorError.transient``).
+* each failed request is retried (reads twice, idempotent writes up to three attempts)
+  with full-jitter backoff, only for transient errors, within a retry budget;
+* at most ``max_in_flight`` requests are outstanding at once;
+* one circuit breaker for reads and one for writes, so a failing write path does not
+  stop reads;
+* a whole world read has a deadline.
+
+This is the only module that talks to the simulator.
 """
 
 from __future__ import annotations
 
 import asyncio
+import random
+import time
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, TypeVar
 
 import httpx
 from pydantic import TypeAdapter, ValidationError
 
+from .config import Settings
 from .errors import (
+    CircuitOpenError,
     MalformedResponse,
     SimulatorError,
     SimulatorInvalidRequest,
@@ -38,11 +50,15 @@ from .models import (
     Station,
     SupplyArrival,
 )
+from .resilience import BreakerState, CircuitBreaker, RetryBudget
 from .snapshot import WorldSnapshot
 
 T = TypeVar("T")
 
 STALE_HEADER = "x-simulator-stale"
+
+READ = "read"
+WRITE = "write"
 
 
 def _error_code_and_message(body: Any) -> tuple[str | None, str]:
@@ -84,24 +100,62 @@ class SimulatorClient:
         self,
         base_url: str,
         *,
-        timeout: float = 3.0,
-        torn_read_attempts: int = 3,
+        settings: Settings | None = None,
+        timeout: float | None = None,
+        torn_read_attempts: int | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        rng: random.Random | None = None,
     ) -> None:
+        s = settings or Settings()
+        self._settings = s
         self._client = httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
-            timeout=httpx.Timeout(timeout),
+            timeout=httpx.Timeout(timeout if timeout is not None else s.request_timeout),
             transport=transport,
         )
-        self._torn_read_attempts = max(1, torn_read_attempts)
+        self._torn_read_attempts = max(1, torn_read_attempts if torn_read_attempts is not None else s.torn_read_attempts)
+        self._clock = clock
+        self._sleep = sleep
+        self._rng = rng or random.Random()
+        self._semaphore = asyncio.Semaphore(max(1, s.max_in_flight))
+        self._budget = RetryBudget(s.retry_budget_fraction, s.retry_budget_window, s.retry_budget_floor, clock)
+        self._breakers = {
+            kind: CircuitBreaker(
+                kind,
+                consecutive_failures=s.breaker_consecutive_failures,
+                failure_rate=s.breaker_failure_rate,
+                min_calls=s.breaker_min_calls,
+                window=s.breaker_window,
+                cooldown=s.breaker_cooldown,
+                max_cooldown=s.breaker_max_cooldown,
+                probes_needed=s.breaker_probes_needed,
+                clock=clock,
+            )
+            for kind in (READ, WRITE)
+        }
+        self.retries_total = 0
+        self.retry_budget_exhausted_total = 0
 
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    # -- introspection -------------------------------------------------------------
+
+    def breaker_states(self) -> dict[str, dict[str, Any]]:
+        return {name: b.info() for name, b in self._breakers.items()}
+
+    def any_breaker_not_closed(self) -> bool:
+        return any(b.state is not BreakerState.CLOSED for b in self._breakers.values())
+
+    def retry_stats(self) -> dict[str, int]:
+        return {**self._budget.stats(), "retries_total": self.retries_total, "budget_exhausted_total": self.retry_budget_exhausted_total}
+
     # -- low level -----------------------------------------------------------------
 
-    async def _send(self, method: str, path: str, **kwargs: Any) -> tuple[Any, bool]:
-        """Send a request; return (parsed JSON, stale flag). Raises SimulatorError."""
+    async def _send_once(self, method: str, path: str, **kwargs: Any) -> tuple[Any, bool]:
+        """One HTTP attempt. Raises SimulatorError (transient ones are SimulatorUnavailable)."""
         try:
             response = await self._client.request(method, path, **kwargs)
         except httpx.TimeoutException as exc:
@@ -114,6 +168,64 @@ class SimulatorClient:
             return response.json(), stale
         except ValueError as exc:
             raise MalformedResponse(f"non-JSON body from {path}", status=response.status_code) from exc
+
+    def _backoff(self, kind: str, attempt: int) -> float:
+        """Full jitter: a uniform delay between zero and the capped exponential."""
+        if kind == WRITE:
+            base, cap = self._settings.write_backoff_base, self._settings.write_backoff_cap
+        else:
+            base, cap = self._settings.read_backoff_base, self._settings.read_backoff_cap
+        return self._rng.uniform(0.0, min(cap, base * (2 ** (attempt - 1))))
+
+    async def _send(self, method: str, path: str, *, kind: str = READ, retries: int | None = None, **kwargs: Any) -> tuple[Any, bool]:
+        """Send with the resilience policy. Returns (parsed JSON, stale flag)."""
+        if retries is None:
+            retries = self._settings.write_attempts - 1 if kind == WRITE else self._settings.read_retries
+        breaker = self._breakers[kind]
+        # The breaker judges a request by its final outcome, after its retries: retries already
+        # absorb a single failed attempt, so counting attempts would trip it at the simulator's
+        # ordinary 24% error rate. A request let through a non-closed breaker is a probe and is
+        # not retried: it is there to find out whether the simulator is back.
+        is_probe = breaker.state is not BreakerState.CLOSED
+        if not breaker.allow():
+            raise CircuitOpenError(f"{kind} circuit is open; {method} {path} not sent")
+        if is_probe:
+            retries = 0
+        self._budget.record_request()
+        attempt = 0
+        recorded = False
+        try:
+            while True:
+                try:
+                    async with self._semaphore:
+                        result = await self._send_once(method, path, **kwargs)
+                except SimulatorUnavailable:
+                    if attempt >= retries:
+                        recorded = True
+                        breaker.record_failure()
+                        raise
+                    if not self._budget.try_acquire_retry():
+                        self.retry_budget_exhausted_total += 1
+                        recorded = True
+                        breaker.record_failure()
+                        raise
+                    attempt += 1
+                    self.retries_total += 1
+                    await self._sleep(self._backoff(kind, attempt))
+                    continue
+                except SimulatorError:
+                    # The simulator answered (a 409, 404, 422, or an unreadable body): it is healthy.
+                    recorded = True
+                    breaker.record_success()
+                    raise
+                recorded = True
+                breaker.record_success()
+                return result
+        finally:
+            if not recorded:
+                # Cancelled (for example by the world deadline) or an unexpected error: a request
+                # that never finished must not leave a half-open probe stuck.
+                breaker.record_failure()
 
     @staticmethod
     def _parse(path: str, data: Any, tp: type[T] | Any) -> T:
@@ -129,7 +241,8 @@ class SimulatorClient:
     # -- single resources ----------------------------------------------------------
 
     async def health(self) -> dict[str, Any]:
-        data, _ = await self._send("GET", "/v1/health")
+        """The simulator's own liveness probe. It says alive, not usable, and bypasses retries and breakers."""
+        data, _ = await self._send_once("GET", "/v1/health")
         return data
 
     async def instance(self) -> Instance:
@@ -146,26 +259,33 @@ class SimulatorClient:
     # -- writes --------------------------------------------------------------------
 
     async def create_allocation(self, request: AllocationRequest) -> Allocation:
-        data, _ = await self._send("POST", "/v1/allocations", json=request.model_dump(mode="json"))
+        """POST an allocation. Safe to retry: the same key and body returns the existing allocation."""
+        data, _ = await self._send("POST", "/v1/allocations", kind=WRITE, json=request.model_dump(mode="json"))
         return self._parse("/v1/allocations", data, Allocation)
 
     async def cancel_allocation(self, allocation_id: int) -> Allocation:
-        data, _ = await self._send("POST", f"/v1/allocations/{allocation_id}/cancel")
+        """Cancel is not retried: a second cancel of a cancelled allocation is a 409, so an unknown outcome is ambiguous."""
+        data, _ = await self._send("POST", f"/v1/allocations/{allocation_id}/cancel", kind=WRITE, retries=0)
         return self._parse("cancel", data, Allocation)
 
     # -- the whole world -----------------------------------------------------------
 
     async def read_world(self) -> WorldSnapshot:
-        """Read every resource and return one snapshot.
+        """Read every resource and return one snapshot, within the world deadline."""
+        try:
+            return await asyncio.wait_for(self._read_world(), timeout=self._settings.world_deadline)
+        except TimeoutError as exc:
+            raise SimulatorUnavailable(f"world read exceeded {self._settings.world_deadline:g} s") from exc
 
-        The tick is read before and after. If it moved, the read straddled a tick
-        boundary (a torn read), so we try again. After the last attempt we keep
-        the result but mark it ``consistent=False`` rather than fail.
+    async def _read_world(self) -> WorldSnapshot:
+        """The tick is read before and after. If it moved, the read straddled a tick boundary
+        (a torn read), so we try again. After the last attempt we keep the result but mark it
+        ``consistent=False`` rather than fail.
         """
         last: WorldSnapshot | None = None
-        for attempt in range(1, self._torn_read_attempts + 1):
+        for _ in range(self._torn_read_attempts):
             before = await self.instance()
-            reads = await asyncio.gather(
+            results = await asyncio.gather(
                 self._get("/v1/regions", list[Region]),
                 self._get("/v1/depots", list[Depot]),
                 self._get("/v1/stations", list[Station]),
@@ -174,7 +294,12 @@ class SimulatorClient:
                 self._get("/v1/events", list[Event]),
                 self._get("/v1/allocations", list[Allocation]),
                 self._get("/v1/metrics", Metrics),
+                return_exceptions=True,
             )
+            for item in results:
+                if isinstance(item, BaseException):
+                    raise item  # all reads have finished; none is left running behind our back
+            reads: list[tuple[Any, bool]] = results  # type: ignore[assignment]
             after = await self.instance()
             consistent = before.tick == after.tick
             last = WorldSnapshot(

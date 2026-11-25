@@ -51,7 +51,7 @@ Per-request retries are therefore the first resilience feature to build: without
 |---|---|---|
 | Per-request timeout | 3 s | Longer than the 0.5 s default latency fault, shorter than a human notices |
 | Read retries | 2 retries (3 attempts), full jitter, base 100 ms, cap 1 s | F2 arithmetic above |
-| Read retry budget | Retries at most 40% of requests over a rolling 30 s | 31% is the expected need at `p = 0.25`; the budget stops a retry storm if the simulator is really down |
+| Read retry budget | Retries at most 40% of requests over a rolling 30 s, with a floor of 3 retries so a quiet system can still retry | 31% is the expected need at `p = 0.25` (293 retries for 919 requests, 32%, measured live); the budget stops a retry storm if the simulator is really down |
 | Write retries | Only on timeout or 5xx, same key and body, 3 attempts, base 200 ms, cap 2 s | Safe because of idempotency (part 7.4) |
 | Never retried | 404, 409, 422 | The simulator is healthy and said no |
 | Concurrency | At most 8 requests in flight to the simulator | Measured stable at 10; reset seen at 50 |

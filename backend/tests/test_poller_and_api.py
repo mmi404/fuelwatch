@@ -9,7 +9,7 @@ from fuelwatch.main import create_app
 from fuelwatch.poller import Poller
 from fuelwatch.snapshot import SnapshotStore
 
-from .conftest import make_world
+from .conftest import Sleeps, make_world
 
 
 def run(coro):
@@ -34,7 +34,7 @@ class Switchable:
 
 def build(fake: Switchable, **settings_kwargs):
     settings = Settings(poll_interval=0.01, **settings_kwargs)
-    client = SimulatorClient("http://sim", transport=httpx.MockTransport(fake.handler))
+    client = SimulatorClient("http://sim", transport=httpx.MockTransport(fake.handler), sleep=Sleeps())
     store = SnapshotStore()
     return client, store, Poller(client, store, settings), settings
 
@@ -127,7 +127,7 @@ def test_request_refresh_forces_full_read_on_same_tick():
 
 def make_app(fake: Switchable):
     settings = Settings(poll_interval=0.01, ready_max_age=60)
-    client = SimulatorClient("http://sim", transport=httpx.MockTransport(fake.handler))
+    client = SimulatorClient("http://sim", transport=httpx.MockTransport(fake.handler), sleep=Sleeps())
     return create_app(settings=settings, client=client)
 
 
@@ -140,7 +140,7 @@ def test_snapshot_and_readyz_when_healthy():
     with TestClient(make_app(Switchable())) as api:
         _wait_for_snapshot(api)
         body = api.get("/api/snapshot").json()
-        assert body["meta"]["degraded"] is False
+        assert body["meta"]["mode"] == "LIVE"
         assert body["world"]["instance"]["tick_minutes"] == 15
         assert len(body["world"]["stations"]) == 1
         ready = api.get("/readyz")
@@ -151,21 +151,41 @@ def test_snapshot_503_before_first_read_and_readyz_not_ready():
     fake = Switchable()
     fake.down = True
     with TestClient(make_app(fake)) as api:
-        assert api.get("/api/snapshot").status_code == 503
+        denied = api.get("/api/snapshot")
+        assert denied.status_code == 503
+        assert denied.json()["error"]["code"] == "NO_SNAPSHOT"  # the one error shape
         ready = api.get("/readyz")
         assert ready.status_code == 503 and ready.json()["ready"] is False
+        assert ready.json()["mode"] == "STARTING"
 
 
-def test_degraded_flag_when_simulator_fails_after_a_good_read():
+def test_degraded_mode_when_simulator_fails_after_a_good_read():
     fake = Switchable()
     with TestClient(make_app(fake)) as api:
         _wait_for_snapshot(api)
         fake.down = True
-        _wait_until(lambda: api.get("/api/snapshot").json()["meta"]["degraded"])
+        _wait_until(lambda: api.get("/api/snapshot").json()["meta"]["mode"] == "DEGRADED")
         meta = api.get("/api/snapshot").json()["meta"]
-        assert meta["degraded"] is True
         assert meta["has_snapshot"] is True  # still serving the last good one
         assert meta["last_error"]
+        assert api.get("/readyz").status_code == 200  # degraded still serves, so it stays ready
+
+
+def test_unknown_path_and_bad_method_use_the_unified_error_shape():
+    with TestClient(make_app(Switchable())) as api:
+        missing = api.get("/api/nope")
+        assert missing.status_code == 404
+        assert missing.json() == {"error": {"code": "NOT_FOUND", "message": "Not Found"}}
+        assert api.post("/livez").json()["error"]["code"] == "METHOD_NOT_ALLOWED"
+
+
+def test_breaker_state_is_reported_in_meta():
+    fake = Switchable()
+    with TestClient(make_app(fake)) as api:
+        _wait_for_snapshot(api)
+        fake.down = True
+        _wait_until(lambda: api.get("/api/snapshot").json()["meta"]["breakers"]["read"]["state"] == "OPEN")
+        assert api.get("/api/snapshot").json()["meta"]["breakers"]["write"]["state"] == "CLOSED"
 
 
 def _wait_until(predicate, timeout=3.0):
