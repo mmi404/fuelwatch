@@ -19,13 +19,16 @@ from .snapshot import SnapshotStore
 from .world import WorldTracker
 
 if TYPE_CHECKING:
+    from .executor import Executor
     from .intel import Intelligence
 
 log = logging.getLogger("fuelwatch.poller")
 
 
 class Poller:
-    def __init__(self, client: SimulatorClient, store: SnapshotStore, settings: Settings, world: WorldTracker | None = None, intelligence: "Intelligence | None" = None) -> None:
+    def __init__(self, client: SimulatorClient, store: SnapshotStore, settings: Settings, world: WorldTracker | None = None, intelligence: "Intelligence | None" = None, executor: "Executor | None" = None) -> None:
+        self._executor = executor
+        self._lock = asyncio.Lock()  # the background loop and an approval may both want a fresh read
         self._world = world
         self._intel = intelligence
         self._client = client
@@ -39,6 +42,10 @@ class Poller:
 
     async def poll_once(self) -> bool:
         """Run one cycle. Returns True if a new snapshot was published."""
+        async with self._lock:
+            return await self._poll_once()
+
+    async def _poll_once(self) -> bool:
         try:
             instance = await self._client.instance()
             current = self._store.current
@@ -68,6 +75,8 @@ class Poller:
                     log.exception("history sync failed")
             if self._intel is not None:
                 await self._intel.update(snapshot)  # catches its own errors
+            if self._executor is not None:
+                await self._executor.on_snapshot(snapshot)  # catches its own errors
             return True
         except SimulatorError as exc:
             self._store.record_failure(str(exc))
@@ -84,4 +93,6 @@ class Poller:
     async def run(self) -> None:
         while True:
             await self.poll_once()
+            if self._executor is not None:
+                await self._executor.after_poll()  # outside the poll lock: it may need a fresh read itself
             await asyncio.sleep(self._delay())

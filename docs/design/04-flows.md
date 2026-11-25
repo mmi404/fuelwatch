@@ -108,7 +108,9 @@ sequenceDiagram
 
 *Figure 4.3. A validation 409 does not consume the idempotency key, and the same key with the same body returns the existing allocation. Both facts are `[live]`, and both are why a retry is safe.*
 
-If all retries end with an unknown outcome, the line becomes `UNKNOWN` and the next snapshot is searched for an allocation carrying its key; a match resolves it to `SUBMITTED`, no match after the request could no longer be in flight resolves it to `FAILED`. The system never guesses.
+Approval starts with a fresh read of the world, so the gate and the re-validation see the simulator as it is now, not as it was when the proposal was made. Lines are sent one after another and each one counts what the earlier ones used (depot stock, dispatch capacity, room at the station), because the snapshot cannot show them yet.
+
+If all retries end with an unknown outcome, the line becomes `UNKNOWN` and every later snapshot is searched for an allocation carrying its key; a match resolves it to `SUBMITTED`. A snapshot read at least 10 seconds after the last attempt that still has no such allocation resolves it to `FAILED`, because by then the request cannot still be in flight. The system never guesses.
 
 After submission the line is tracked from snapshots: `PENDING`, `IN_TRANSIT`, then `ARRIVED`, `FAILED` or `CANCELLED`, with `executed_quantity` compared to what the station actually received.
 

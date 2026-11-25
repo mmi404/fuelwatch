@@ -115,6 +115,11 @@ def _need(snapshot: WorldSnapshot, forecaster: DemandForecaster, station: Statio
     return min(uncapped, headroom), headroom, uncapped, floor
 
 
+def headroom_liters(snapshot: WorldSnapshot, forecaster: DemandForecaster, station: Station, fuel, route: Route, arrivals: dict[int, float], closed: set[int]) -> float:
+    """Litres that fit in the tank at the arrival tick on the low-demand path, net of fuel already on the road."""
+    return _need(snapshot, forecaster, station, fuel, route, arrivals, closed, AllocatorConfig())[1]
+
+
 def plan_shipments(snapshot: WorldSnapshot, forecaster: DemandForecaster, assessments: list[Assessment], cfg: AllocatorConfig | None = None) -> Plan:
     cfg = cfg or AllocatorConfig()
     T = snapshot.tick

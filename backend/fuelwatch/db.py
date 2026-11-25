@@ -18,7 +18,7 @@ from pathlib import Path
 
 from .models import DemandRecord
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS world_epoch (
@@ -92,7 +92,29 @@ CREATE TABLE IF NOT EXISTS alert (
     updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS alert_by_state ON alert (epoch_id, state);
+CREATE TABLE IF NOT EXISTS execution_attempt (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    line_id INTEGER NOT NULL REFERENCES proposal_line(id),
+    attempted_at TEXT NOT NULL,
+    snapshot_tick INTEGER NOT NULL,
+    snapshot_age_s REAL NOT NULL,
+    http_status INTEGER,
+    error_code TEXT,
+    outcome TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS execution_attempt_by_line ON execution_attempt (line_id);
+CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    action TEXT NOT NULL,
+    entity TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    detail TEXT NOT NULL
+);
 """
+
+_CLOSED_WITHOUT_SENDING = {"SUPERSEDED": "SUPERSEDED", "EXPIRED": "EXPIRED", "REJECTED": "REJECTED_BY_OPERATOR"}
 
 
 @dataclass(frozen=True)
@@ -261,7 +283,11 @@ class Database:
             sql += f" AND status IN ({','.join('?' * len(only_from))})"
             args.extend(only_from)
         with self._lock:
-            return self._conn.execute(sql, args).rowcount > 0
+            changed = self._conn.execute(sql, args).rowcount > 0
+            if changed and status in _CLOSED_WITHOUT_SENDING:
+                # A proposal that ends without being approved will never send its planned lines.
+                self._conn.execute("UPDATE proposal_line SET status='SKIPPED', failure_code=? WHERE proposal_id=? AND status='PLANNED'", (_CLOSED_WITHOUT_SENDING[status], proposal_id))
+            return changed
 
     def proposals(self, *, epoch_id: int | None = None, statuses: tuple[str, ...] | None = None, station_id: str | None = None, fuel_type: str | None = None, limit: int = 100) -> list[dict]:
         sql, args = "SELECT * FROM proposal WHERE 1=1", []
@@ -297,6 +323,8 @@ class Database:
             d = dict(self._conn.execute("SELECT * FROM proposal WHERE id=?", (proposal_id,)).fetchone())
             d["explanation"] = json.loads(d["explanation"])
             d["lines"] = [dict(x) for x in self._conn.execute("SELECT * FROM proposal_line WHERE proposal_id=? ORDER BY id", (proposal_id,)).fetchall()]
+            for line in d["lines"]:
+                line["attempts"] = [dict(x) for x in self._conn.execute("SELECT * FROM execution_attempt WHERE line_id=? ORDER BY id", (line["id"],)).fetchall()]
         return d
 
     # -- alerts ---------------------------------------------------------------------------
@@ -329,3 +357,49 @@ class Database:
     def set_alert_state(self, alert_id: int, state: str) -> None:
         with self._lock:
             self._conn.execute("UPDATE alert SET state=?, updated_at=? WHERE id=?", (state, datetime.now(UTC).isoformat(), alert_id))
+
+    # -- ledger: lines, attempts, audit -----------------------------------------------------
+
+    _LINE_COLUMNS = ("status", "sim_allocation_id", "executed_quantity", "failure_code")
+
+    def update_line(self, line_id: int, **fields: object) -> None:
+        unknown = set(fields) - set(self._LINE_COLUMNS)
+        if unknown or not fields:
+            raise ValueError(f"cannot update line columns {sorted(unknown) or fields}")
+        sets = ", ".join(f"{k}=?" for k in fields)
+        with self._lock:
+            self._conn.execute(f"UPDATE proposal_line SET {sets} WHERE id=?", (*fields.values(), line_id))
+
+    def lines_in(self, statuses: tuple[str, ...], *, epoch_id: int | None = None) -> list[dict]:
+        sql = f"SELECT l.*, p.epoch_id FROM proposal_line l JOIN proposal p ON p.id=l.proposal_id WHERE l.status IN ({','.join('?' * len(statuses))})"
+        args: list[object] = list(statuses)
+        if epoch_id is not None:
+            sql += " AND p.epoch_id=?"
+            args.append(epoch_id)
+        with self._lock:
+            return [dict(r) for r in self._conn.execute(sql + " ORDER BY l.id", args).fetchall()]
+
+    def add_attempt(self, line_id: int, *, snapshot_tick: int, snapshot_age_s: float, http_status: int | None, error_code: str | None, outcome: str) -> int:
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO execution_attempt (line_id, attempted_at, snapshot_tick, snapshot_age_s, http_status, error_code, outcome) VALUES (?,?,?,?,?,?,?)",
+                (line_id, datetime.now(UTC).isoformat(), snapshot_tick, snapshot_age_s, http_status, error_code, outcome),
+            )
+        return cur.lastrowid
+
+    def last_attempt_at(self, line_id: int) -> str | None:
+        with self._lock:
+            row = self._conn.execute("SELECT MAX(attempted_at) FROM execution_attempt WHERE line_id=?", (line_id,)).fetchone()
+        return row[0]
+
+    def audit(self, actor: str, action: str, entity: str, entity_id: object, detail: dict | None = None) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO audit_log (at, actor, action, entity, entity_id, detail) VALUES (?,?,?,?,?,?)",
+                (datetime.now(UTC).isoformat(), actor, action, entity, str(entity_id), json.dumps(detail or {})),
+            )
+
+    def audit_rows(self, *, limit: int = 100, offset: int = 0) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset)).fetchall()
+        return [{**dict(r), "detail": json.loads(r["detail"])} for r in rows]

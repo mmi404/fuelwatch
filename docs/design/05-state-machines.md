@@ -35,6 +35,7 @@ stateDiagram-v2
 | `PROPOSED` to `SUPERSEDED` | A newer snapshot produces a materially different proposal for the same station and fuel, or no proposal at all for it because the shipment is no longer needed |
 | `PROPOSED` or `HELD` to `EXPIRED` | The expiry tick passes, or the world epoch changes (a reset) |
 | `APPROVED` to `HELD` | The execution gate is closed: data too old, stale flag, or write breaker open |
+| `HELD` to `APPROVED` | A later snapshot finds the gate open again; the held approval stands (within its expiry) and runs without the operator doing anything |
 | `EXECUTING` to `PARTIAL` | Re-validation skipped some lines, or the simulator rejected some with a 409 |
 
 A proposal is for one station and one fuel; its lines are the shipments for that pair. After every snapshot the allocator's plan is compared with the open proposal for each pair:
@@ -48,6 +49,20 @@ A proposal is for one station and one fuel; its lines are the shipments for that
 A stale snapshot, or one read while the tick moved, creates no new proposals; the open ones wait. The 500 L and 15% are initial values: tight enough that a proposal follows the plan, loose enough that a rising need does not replace it every tick.
 
 Expiry is measured in ticks, not seconds, so it means the same thing at any simulation speed. The initial value is 40 ticks (10 simulated hours), to be tuned from the benchmark; it is deliberately long because re-validation, not expiry, protects correctness (ADR-07).
+
+### Execution rules
+
+| Rule | Behaviour |
+|---|---|
+| Gate | Closed when there is no snapshot, the snapshot is `STALE`, or the write breaker is open. `DEGRADED` closes it unless the request carries `override_stale`; the override is audited and never opens a breaker or a stale snapshot |
+| Fresh read | Every approval, and every automatic resume, starts with a full refresh |
+| Quantity | The minimum of the approved litres, route maximum, depot stock, dispatch capacity left (this tick, including what earlier lines of the run used) and headroom at the destination; whole litres; never more than approved |
+| Smallest shipment | The smaller of 1,000 L and half the approved litres. A line below it is skipped with the limit that caused it as the reason |
+| Skipped | Route disrupted at the current tick, station in outage, unknown route or depot, or a limit above. The reason is the line's `failure_code` and an audit row |
+| Written first | The line's quantity and an attempt row `SENDING` are stored before the request, so a crash always finds a key, a quantity and a time to resolve from |
+| Breaker opens mid-run | The line goes back to `PLANNED`, nothing was sent, and the proposal is held |
+| Closed without approval | A proposal that is superseded, expired or rejected marks its `PLANNED` lines `SKIPPED` |
+| World reset | Old lines still `PLANNED` become `SKIPPED`; lines already sent, sending or unknown become `FAILED` with `WORLD_RESET`; `APPROVED` and `HELD` proposals expire; an `EXECUTING` one is closed from its lines |
 
 ### Line states
 

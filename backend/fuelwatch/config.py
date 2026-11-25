@@ -23,6 +23,8 @@ class Settings:
     refresh_max_age: float = 5.0
     # Snapshots older than this many seconds are STALE and /readyz reports not ready.
     ready_max_age: float = 15.0
+    # Shared secret for write and control endpoints (header X-Operator-Token). Empty means they are all refused.
+    operator_token: str = ""
     # Attempts to obtain a snapshot whose tick did not move during the read.
     torn_read_attempts: int = 3
     # A whole world read that takes longer than this is abandoned: it would be too old to publish.

@@ -4,18 +4,21 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hmac
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .client import SimulatorClient
 from .db import Database
 from .config import Settings
+from .executor import ApiError, Executor
 from .health import Mode, compute_mode
 from .intel import Intelligence
 from .poller import Poller
@@ -33,6 +36,10 @@ def error_body(code: str, message: str) -> dict[str, dict[str, str]]:
     return {"error": {"code": code, "message": message}}
 
 
+class ApproveBody(BaseModel):
+    override_stale: bool = False
+
+
 def create_app(settings: Settings | None = None, client: SimulatorClient | None = None, db: Database | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     store = SnapshotStore()
@@ -43,7 +50,9 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
     world = WorldTracker(db, client)
     proposals = ProposalService(db, world)
     intel = Intelligence(db, world, proposals=proposals)
-    poller = Poller(client, store, settings, world, intel)
+    executor = Executor(db, world, store, client, intel, settings, lambda: mode())
+    poller = Poller(client, store, settings, world, intel, executor)
+    executor.attach(poller)
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -65,6 +74,7 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
     app.state.client = client
     app.state.world = world
     app.state.intel = intel
+    app.state.executor = executor
     app.state.db = db
 
     @app.exception_handler(StarletteHTTPException)
@@ -151,6 +161,27 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
         if found is None:
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"no proposal {proposal_id}"})
         return found
+
+    def require_operator(x_operator_token: str | None = Header(default=None)) -> None:
+        """Write and control endpoints need the shared secret; with none configured they are all refused."""
+        if not settings.operator_token:
+            raise HTTPException(status_code=503, detail={"code": "OPERATOR_TOKEN_NOT_SET", "message": "write endpoints are disabled until OPERATOR_TOKEN is set"})
+        if x_operator_token is None or not hmac.compare_digest(x_operator_token.encode(), settings.operator_token.encode()):
+            raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "message": "missing or wrong X-Operator-Token"})
+
+    @app.post("/api/proposals/{proposal_id}/approve", dependencies=[Depends(require_operator)])
+    async def api_approve(proposal_id: int, body: ApproveBody | None = None) -> dict[str, Any]:
+        try:
+            return await executor.approve(proposal_id, override_stale=bool(body and body.override_stale))
+        except ApiError as exc:
+            raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": exc.message}) from exc
+
+    @app.post("/api/proposals/{proposal_id}/reject", dependencies=[Depends(require_operator)])
+    async def api_reject(proposal_id: int) -> dict[str, Any]:
+        try:
+            return await executor.reject(proposal_id)
+        except ApiError as exc:
+            raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": exc.message}) from exc
 
     @app.get("/api/alerts")
     async def api_alerts(state: str | None = None) -> list[dict[str, Any]]:

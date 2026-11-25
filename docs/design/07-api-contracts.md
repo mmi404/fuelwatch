@@ -12,7 +12,7 @@ Two interfaces matter: the one FuelWatch **exposes** to its dashboard and to ope
 | Freshness | Every response about the world carries `meta.tick` and `meta.age_seconds`. |
 | Caching | `GET /api/snapshot` is served from memory. An `ETag` of `epoch-tick` allows `304` responses. |
 | Errors | `{"error": {"code": "...", "message": "...", "details": {...}}}` with a stable `code`. |
-| Authentication | None on read endpoints. Write and control endpoints require the header `X-Operator-Token`, a shared secret from the environment. |
+| Authentication | None on read endpoints. Write and control endpoints require the header `X-Operator-Token`, a shared secret from the environment (`OPERATOR_TOKEN`). A wrong or missing header is `401 UNAUTHORIZED`; with no secret configured every such endpoint answers `503 OPERATOR_TOKEN_NOT_SET`, so the system fails closed. |
 | Idempotency | Approve and reject are idempotent: repeating them returns the current state, never a second action. |
 | Browser rule | The dashboard calls only this API. It never calls the simulator. |
 
@@ -29,8 +29,8 @@ Two interfaces matter: the one FuelWatch **exposes** to its dashboard and to ope
 | GET | `/api/proposals` | Proposals of the current world, newest first, with lines and explanation cards. Query: `status` (comma list), `limit` 1 to 200 | `200 [..]` or `422` | no |
 | GET | `/api/proposals/{id}` | One proposal with lines and attempts | `200` or `404` | no |
 | GET | `/api/alerts` | Stockout alerts of the current world, newest first. Query: `state` (comma list of open, acknowledged, cleared) | `200 [..]` | no |
-| POST | `/api/proposals/{id}/approve` | Approve; execution follows the gate. Body may carry `override_stale` | `200` with the new state | yes |
-| POST | `/api/proposals/{id}/reject` | Reject | `200` | yes |
+| POST | `/api/proposals/{id}/approve` | Approve; execution follows the gate. Body may carry `override_stale`. Returns the proposal with each line's outcome, including `HELD` with the reason when the gate is closed | `200`, `401`, `404`, `409 INVALID_STATE` (not open), `503 OPERATOR_TOKEN_NOT_SET` | yes |
+| POST | `/api/proposals/{id}/reject` | Reject an open (`PROPOSED` or `HELD`) proposal | `200`, `401`, `404`, `409` | yes |
 | GET | `/api/allocations` | Tracked shipments from our ledger, with simulator status | `200 [..]` | no |
 | GET | `/api/audit` | Audit trail, newest first, paged | `200 [..]` | no |
 | PUT | `/api/autopilot` | Switch between manual and autopilot, with guard limits | `200` | yes |
