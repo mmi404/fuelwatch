@@ -38,6 +38,8 @@ class ExecSim:
         self.reject_code = "ROUTE_DISRUPTED"
         self.allocations: dict[str, dict] = {}
         self.posts: list[dict] = []
+        self.admin_calls: list[str] = []
+        self.admin_down = False
 
     def _world(self) -> dict:
         w = make_world(tick=self.tick)
@@ -66,6 +68,11 @@ class ExecSim:
             if self.post_mode == "drop_response":
                 return httpx.Response(503, json={"error": {"code": "FAULT_INJECTED", "message": "response lost"}})
             return httpx.Response(201, json=alloc)
+        if request.method == "POST" and path.startswith("/admin/"):
+            self.admin_calls.append(path)
+            if self.admin_down:
+                return httpx.Response(500, json={"detail": "boom"})
+            return httpx.Response(200, json={"status": "ok", "tick": self.tick})
         if path == "/v1/demand-history":
             return httpx.Response(200, json=[])
         headers = {"X-Simulator-Stale": "true"} if self.stale else {}

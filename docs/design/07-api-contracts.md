@@ -23,7 +23,7 @@ Two interfaces matter: the one FuelWatch **exposes** to its dashboard and to ope
 | GET | `/livez` | The process is up | `200 {"status":"ok"}` | no |
 | GET | `/readyz` | A recent snapshot exists | `200 {"ready":true, ...meta}` or `503 {"ready":false,"reason":...}` | no |
 | GET | `/api/snapshot` | The whole current world | `200 {"meta", "world"}`, or `503` with code `NO_SNAPSHOT` before the first read | no |
-| GET | `/api/status` | Mode, breaker states, stream state, epoch, versions, fallback counters | `200` | no |
+| GET | `/api/status` | Mode, tick and age, epoch and resets, breaker states, retry budget, history and forecast health, tick-stream state, execution counters and whether the gate is open, autopilot settings, proposals by status, open alerts, versions | `200` | no |
 | GET | `/api/risks` | One row per station and fuel: hours to stockout P50 and P90, risk, level, ordered by urgency | `200 [..]` | no |
 | GET | `/api/forecast` | Demand forecast with P10, P50, P90, filterable by station and fuel | `200 [..]` | no |
 | GET | `/api/proposals` | Proposals of the current world, newest first, with lines and explanation cards. Query: `status` (comma list), `limit` 1 to 200 | `200 [..]` or `422` | no |
@@ -31,11 +31,12 @@ Two interfaces matter: the one FuelWatch **exposes** to its dashboard and to ope
 | GET | `/api/alerts` | Stockout alerts of the current world, newest first. Query: `state` (comma list of open, acknowledged, cleared) | `200 [..]` | no |
 | POST | `/api/proposals/{id}/approve` | Approve; execution follows the gate. Body may carry `override_stale`. Returns the proposal with each line's outcome, including `HELD` with the reason when the gate is closed | `200`, `401`, `404`, `409 INVALID_STATE` (not open), `503 OPERATOR_TOKEN_NOT_SET` | yes |
 | POST | `/api/proposals/{id}/reject` | Reject an open (`PROPOSED` or `HELD`) proposal | `200`, `401`, `404`, `409` | yes |
-| GET | `/api/allocations` | Tracked shipments from our ledger, with simulator status | `200 [..]` | no |
-| GET | `/api/audit` | Audit trail, newest first, paged | `200 [..]` | no |
-| PUT | `/api/autopilot` | Switch between manual and autopilot, with guard limits | `200` | yes |
-| POST | `/api/sim/run`, `/api/sim/pause`, `/api/sim/step`, `/api/sim/reset` | Demo controls, proxied to the simulator's admin endpoints so the browser never calls it | `200` | yes |
-| GET | `/api/stream` | Browser server-sent events: tick, snapshot changed, proposal changed | `text/event-stream` | no |
+| GET | `/api/allocations` | Tracked shipments from our ledger (lines sent, being sent, unknown, rejected or failed), newest first, each with the simulator's own allocation record when it is in the snapshot. Query: `status` (comma list), `limit` 1 to 500 | `200 [..]` or `422` | no |
+| GET | `/api/audit` | Audit trail, newest first. Query: `limit` 1 to 500, `offset` | `200 [..]` or `422` | no |
+| GET | `/api/autopilot` | The autopilot switch and its guard limits | `200` | no |
+| PUT | `/api/autopilot` | Change the switch and any guard limits sent (`enabled`, `min_confidence`, `max_liters_per_proposal`, `max_liters_per_tick`, `max_proposals_per_tick`); fields not sent keep their value | `200`, `401`, `422` | yes |
+| POST | `/api/sim/run`, `/api/sim/pause`, `/api/sim/step`, `/api/sim/reset` | Demo controls, proxied to the simulator's admin endpoints so the browser never calls it. One attempt each, since they are not idempotent; each is audited and wakes the poller | `200 {ok, action, simulator}`, `401`, `404` (unknown control), `503` or `502` when the simulator fails | yes |
+| GET | `/api/stream` | Browser server-sent events: `snapshot` (a new world was read), `proposals` (created, superseded or expired counts), `proposal` (one proposal changed state), `autopilot`. A comment line starts the stream, the current snapshot tick follows, and a keepalive comment is sent every 15 s. A slow browser loses its oldest events; the REST endpoints are the truth | `text/event-stream` | no |
 | GET | `/metrics` | Prometheus exposition | text | no |
 
 ### Response shape of `/api/snapshot`

@@ -379,6 +379,17 @@ class Database:
         with self._lock:
             return [dict(r) for r in self._conn.execute(sql + " ORDER BY l.id", args).fetchall()]
 
+    def ledger(self, epoch_id: int, *, statuses: tuple[str, ...] | None = None, limit: int = 100) -> list[dict]:
+        """Lines that have been, or are being, sent, newest first, with their proposal's headline fields."""
+        wanted = statuses or ("SENDING", "UNKNOWN", "SUBMITTED", "IN_TRANSIT", "ARRIVED", "FAILED", "REJECTED")
+        sql = (
+            "SELECT l.*, p.epoch_id, p.snapshot_tick, p.policy, p.status AS proposal_status, p.confidence"
+            f" FROM proposal_line l JOIN proposal p ON p.id=l.proposal_id WHERE p.epoch_id=? AND l.status IN ({','.join('?' * len(wanted))})"
+            " ORDER BY l.id DESC LIMIT ?"
+        )
+        with self._lock:
+            return [dict(r) for r in self._conn.execute(sql, (epoch_id, *wanted, limit)).fetchall()]
+
     def add_attempt(self, line_id: int, *, snapshot_tick: int, snapshot_age_s: float, http_status: int | None, error_code: str | None, outcome: str) -> int:
         with self._lock:
             cur = self._conn.execute(

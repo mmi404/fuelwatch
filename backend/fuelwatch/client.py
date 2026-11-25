@@ -18,9 +18,10 @@ This is the only module that talks to the simulator.
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, TypeVar
 
@@ -110,6 +111,8 @@ class SimulatorClient:
     ) -> None:
         s = settings or Settings()
         self._settings = s
+        self._base_url = base_url.rstrip("/")
+        self._transport = transport
         self._client = httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             timeout=httpx.Timeout(timeout if timeout is not None else s.request_timeout),
@@ -255,6 +258,45 @@ class SimulatorClient:
             params["station_id"] = station_id
         value, _ = await self._get("/v1/demand-history", list[DemandRecord], **params)
         return value
+
+    # -- demo controls and the tick stream --------------------------------------------------
+
+    async def admin_command(self, name: str) -> dict[str, Any]:
+        """Run, pause, step or reset the simulator. One attempt: admin calls bypass injected faults and are not idempotent."""
+        data, _ = await self._send_once("POST", f"/admin/{name}")
+        return data if isinstance(data, dict) else {"result": data}
+
+    async def stream_events(self, read_timeout: float = 30.0) -> AsyncIterator[tuple[str, dict[str, Any]]]:
+        """Server-sent events from `/v1/stream` as (event, data). Yields ("open", {}) once connected and
+        ("keepalive", {}) for comment lines. Ends when the stream closes; raises on a refusal or a read
+        timeout (no bytes for `read_timeout` seconds)."""
+        timeout = httpx.Timeout(self._settings.request_timeout, read=read_timeout)
+        async with httpx.AsyncClient(base_url=self._base_url, timeout=timeout, transport=self._transport) as http:
+            try:
+                async with http.stream("GET", "/v1/stream") as response:
+                    if response.status_code != 200:
+                        await response.aread()
+                        raise_for_status(response)
+                    yield "open", {}
+                    event, data = "message", []
+                    async for line in response.aiter_lines():
+                        if line == "":
+                            if data:
+                                try:
+                                    yield event, json.loads(chr(10).join(data))
+                                except ValueError:
+                                    pass  # a malformed event is ignored: the stream is only a hint
+                            event, data = "message", []
+                        elif line.startswith(":"):
+                            yield "keepalive", {}
+                        elif line.startswith("event:"):
+                            event = line[6:].strip()
+                        elif line.startswith("data:"):
+                            data.append(line[5:].strip())
+            except httpx.TimeoutException as exc:
+                raise SimulatorUnavailable("no bytes from the stream within the read timeout") from exc
+            except httpx.HTTPError as exc:
+                raise SimulatorUnavailable(f"stream error: {exc!r}") from exc
 
     # -- writes --------------------------------------------------------------------
 

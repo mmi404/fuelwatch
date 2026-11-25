@@ -61,6 +61,7 @@ Expiry is measured in ticks, not seconds, so it means the same thing at any simu
 | Skipped | Route disrupted at the current tick, station in outage, unknown route or depot, or a limit above. The reason is the line's `failure_code` and an audit row |
 | Written first | The line's quantity and an attempt row `SENDING` are stored before the request, so a crash always finds a key, a quantity and a time to resolve from |
 | Breaker opens mid-run | The line goes back to `PLANNED`, nothing was sent, and the proposal is held |
+| Autopilot | Off at every start. When on, once per read of the world and only while the gate is open (it never overrides), it approves open proposals, most urgent first, that have at least `min_confidence` (0.5), at most `max_liters_per_proposal` (20,000 L), and fit inside the tick's budget of `max_liters_per_tick` (60,000 L) and `max_proposals_per_tick` (10). Everything else waits for a human. Each approval is audited with the actor `autopilot` |
 | Closed without approval | A proposal that is superseded, expired or rejected marks its `PLANNED` lines `SKIPPED` |
 | World reset | Old lines still `PLANNED` become `SKIPPED`; lines already sent, sending or unknown become `FAILED` with `WORLD_RESET`; `APPROVED` and `HELD` proposals expire; an `EXECUTING` one is closed from its lines |
 
@@ -212,4 +213,4 @@ stateDiagram-v2
   CONNECTED --> DISCONNECTED : stream closed
 ```
 
-*Figure 5.6. `STALLED` means the REST tick advanced but no tick event arrived, or no bytes arrived for 30 s. It exists because the simulator drops a slow client from its broadcast list while keeping the HTTP connection open on keepalives. A connection that looks alive can be deaf, so liveness is judged by tick progress, never by connection state. On every reconnect the poller does a full REST refresh, because the stream replays nothing.*
+*Figure 5.6. `STALLED` means the REST tick advanced at least 10 s ago but no tick event arrived, or no bytes arrived for 30 s. A refused connection backs off 1, 2, 4 s and so on up to 30 s, and the delay resets after a good connection. A tick event wakes the poller at once, and a reconnect forces a full read. It exists because the simulator drops a slow client from its broadcast list while keeping the HTTP connection open on keepalives. A connection that looks alive can be deaf, so liveness is judged by tick progress, never by connection state. On every reconnect the poller does a full REST refresh, because the stream replays nothing.*

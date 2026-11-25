@@ -25,6 +25,9 @@ class Settings:
     ready_max_age: float = 15.0
     # Shared secret for write and control endpoints (header X-Operator-Token). Empty means they are all refused.
     operator_token: str = ""
+    # Listen to the simulator's tick stream as an early-refresh hint. Off in the dataclass so unit tests stay quiet;
+    # `from_env` turns it on unless STREAM_ENABLED says otherwise.
+    stream_enabled: bool = False
     # Attempts to obtain a snapshot whose tick did not move during the read.
     torn_read_attempts: int = 3
     # A whole world read that takes longer than this is abandoned: it would be too old to publish.
@@ -63,6 +66,7 @@ class Settings:
             if raw is None:
                 continue
             kind = type(f.default)
-            values[f.name] = kind(raw)
+            values[f.name] = raw.strip().lower() in ("1", "true", "yes", "on") if kind is bool else kind(raw)
+        values.setdefault("stream_enabled", True)
         settings = cls(**values)  # type: ignore[arg-type]
         return cls(**{**values, "simulator_url": settings.simulator_url.rstrip("/")})  # type: ignore[arg-type]

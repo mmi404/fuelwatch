@@ -9,6 +9,7 @@ it is recorded so the API can show the data is aging, and the loop backs off.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from typing import TYPE_CHECKING
 
@@ -19,6 +20,7 @@ from .snapshot import SnapshotStore
 from .world import WorldTracker
 
 if TYPE_CHECKING:
+    from .events import EventBus
     from .executor import Executor
     from .intel import Intelligence
 
@@ -35,6 +37,13 @@ class Poller:
         self._store = store
         self._settings = settings
         self._force_refresh = True
+        self._wake = asyncio.Event()
+        self.bus: EventBus | None = None
+
+    def wake(self) -> None:
+        """Read the world now instead of after the poll interval (a tick event arrived)."""
+        self._force_refresh = True
+        self._wake.set()
 
     def request_refresh(self) -> None:
         """Ask for a full re-read on the next cycle, for example after we POST an allocation."""
@@ -68,6 +77,8 @@ class Poller:
                     log.exception("epoch check failed")
             self._store.publish(snapshot)
             self._force_refresh = False
+            if self.bus is not None:
+                self.bus.publish("snapshot", {"tick": snapshot.tick, "tick_minutes": snapshot.tick_minutes, "stale": snapshot.stale, "consistent": snapshot.consistent})
             if self._world is not None:
                 try:
                     await self._world.sync_history(snapshot)
@@ -75,6 +86,8 @@ class Poller:
                     log.exception("history sync failed")
             if self._intel is not None:
                 await self._intel.update(snapshot)  # catches its own errors
+                if self.bus is not None and any(self._intel.proposal_counts.get(k) for k in ("created", "superseded", "expired")):
+                    self.bus.publish("proposals", {"tick": snapshot.tick, **self._intel.proposal_counts})
             if self._executor is not None:
                 await self._executor.on_snapshot(snapshot)  # catches its own errors
             return True
@@ -95,4 +108,6 @@ class Poller:
             await self.poll_once()
             if self._executor is not None:
                 await self._executor.after_poll()  # outside the poll lock: it may need a fresh read itself
-            await asyncio.sleep(self._delay())
+            self._wake.clear()
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._wake.wait(), self._delay())

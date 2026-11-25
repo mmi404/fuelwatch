@@ -7,18 +7,23 @@ import contextlib
 import hmac
 import logging
 from collections.abc import AsyncIterator
+from dataclasses import asdict
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .client import SimulatorClient
 from .db import Database
 from .config import Settings
+from .db import SCHEMA_VERSION
+from .errors import SimulatorError, SimulatorUnavailable
+from .events import EventBus, format_event, sse_stream
 from .executor import ApiError, Executor
+from .stream import StreamListener
 from .health import Mode, compute_mode
 from .intel import Intelligence
 from .poller import Poller
@@ -40,6 +45,19 @@ class ApproveBody(BaseModel):
     override_stale: bool = False
 
 
+class AutopilotBody(BaseModel):
+    """Only the fields sent are changed. Guard limits must be positive."""
+
+    enabled: bool | None = None
+    min_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    max_liters_per_proposal: float | None = Field(default=None, gt=0)
+    max_liters_per_tick: float | None = Field(default=None, gt=0)
+    max_proposals_per_tick: int | None = Field(default=None, ge=1, le=100)
+
+
+SIM_ACTIONS = ("run", "pause", "step", "reset")
+
+
 def create_app(settings: Settings | None = None, client: SimulatorClient | None = None, db: Database | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     store = SnapshotStore()
@@ -53,16 +71,23 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
     executor = Executor(db, world, store, client, intel, settings, lambda: mode())
     poller = Poller(client, store, settings, world, intel, executor)
     executor.attach(poller)
+    bus = EventBus()
+    poller.bus = executor.bus = bus
+    listener = StreamListener(client, store, poller)
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        task = asyncio.create_task(poller.run(), name="poller")
+        tasks = [asyncio.create_task(poller.run(), name="poller")]
+        if settings.stream_enabled:
+            tasks.append(asyncio.create_task(listener.run(), name="stream-listener"))
         try:
             yield
         finally:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+            for task in tasks:
+                task.cancel()
+            for task in tasks:
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
             if owns_client:
                 await client.aclose()
             if owns_db:
@@ -75,6 +100,8 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
     app.state.world = world
     app.state.intel = intel
     app.state.executor = executor
+    app.state.bus = bus
+    app.state.listener = listener
     app.state.db = db
 
     @app.exception_handler(StarletteHTTPException)
@@ -182,6 +209,89 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
             return await executor.reject(proposal_id)
         except ApiError as exc:
             raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": exc.message}) from exc
+
+    @app.get("/api/status")
+    async def api_status() -> dict[str, Any]:
+        snap, epoch = store.current, world.epoch
+        by_status: dict[str, int] = {}
+        if epoch is not None:
+            for p in await asyncio.to_thread(db.proposals, epoch_id=epoch.id, limit=1000):
+                by_status[p["status"]] = by_status.get(p["status"], 0) + 1
+        info = meta()
+        return {
+            "mode": info["mode"],
+            "tick": info["tick"],
+            "tick_minutes": info["tick_minutes"],
+            "age_seconds": info["age_seconds"],
+            "epoch": info["epoch"],
+            "resets_total": info["resets_total"],
+            "breakers": info["breakers"],
+            "retries": info["retries"],
+            "history": info["history"],
+            "forecast": info["forecast"],
+            "stream": {**listener.info(), "enabled": settings.stream_enabled, "browser_subscribers": bus.subscribers, "events_published": bus.published, "events_dropped": bus.dropped},
+            "execution": {**dict(executor.counters), "gate_open": executor._gate_reason(snap, False) is None},  # noqa: SLF001
+            "autopilot": asdict(executor.autopilot),
+            "proposals_by_status": by_status,
+            "open_alerts": len(await asyncio.to_thread(proposals.alerts, ("open",))),
+            "versions": {"app": app.version, "schema": SCHEMA_VERSION},
+        }
+
+    @app.get("/api/allocations")
+    async def api_allocations(status: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        """Shipments we have sent or are sending, newest first, each with the simulator's own record when it is in the snapshot."""
+        if not 1 <= limit <= 500:
+            raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": "limit must be between 1 and 500"})
+        epoch, snap = world.epoch, store.current
+        if epoch is None:
+            return []
+        statuses = tuple(x.strip().upper() for x in status.split(",") if x.strip()) if status else None
+        lines = await asyncio.to_thread(db.ledger, epoch.id, statuses=statuses, limit=limit)
+        by_key = {a.idempotency_key: a for a in snap.allocations} if snap else {}
+        for line in lines:
+            found = by_key.get(line["idempotency_key"])
+            line["simulator"] = found.model_dump(mode="json") if found else None
+        return lines
+
+    @app.get("/api/audit")
+    async def api_audit(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+        if not 1 <= limit <= 500 or offset < 0:
+            raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": "limit must be between 1 and 500 and offset 0 or more"})
+        return await asyncio.to_thread(db.audit_rows, limit=limit, offset=offset)
+
+    @app.get("/api/autopilot")
+    async def api_autopilot() -> dict[str, Any]:
+        return asdict(executor.autopilot)
+
+    @app.put("/api/autopilot", dependencies=[Depends(require_operator)])
+    async def api_set_autopilot(body: AutopilotBody) -> dict[str, Any]:
+        changes = body.model_dump(exclude_none=True)
+        return asdict(executor.set_autopilot(changes))
+
+    @app.post("/api/sim/{action}", dependencies=[Depends(require_operator)])
+    async def api_sim(action: str) -> dict[str, Any]:
+        """Demo controls: the browser never calls the simulator, so its run, pause, step and reset go through here."""
+        if action not in SIM_ACTIONS:
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"unknown control {action!r}; use one of {', '.join(SIM_ACTIONS)}"})
+        try:
+            result = await client.admin_command(action)
+        except SimulatorUnavailable as exc:
+            raise HTTPException(status_code=503, detail={"code": "SIMULATOR_UNAVAILABLE", "message": str(exc)}) from exc
+        except SimulatorError as exc:
+            raise HTTPException(status_code=502, detail={"code": "SIMULATOR_ERROR", "message": str(exc)}) from exc
+        await asyncio.to_thread(db.audit, "operator", f"sim.{action}", "simulator", "simulator", {})
+        poller.wake()  # read the new state now
+        return {"ok": True, "action": action, "simulator": result}
+
+    @app.get("/api/stream")
+    async def api_stream(request: Request) -> StreamingResponse:
+        snap = store.current
+        initial = [("snapshot", {"tick": snap.tick, "tick_minutes": snap.tick_minutes, "stale": snap.stale, "consistent": snap.consistent})] if snap else []
+        return StreamingResponse(
+            sse_stream(bus, initial=initial, disconnected=request.is_disconnected),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @app.get("/api/alerts")
     async def api_alerts(state: str | None = None) -> list[dict[str, Any]]:

@@ -14,6 +14,7 @@ import asyncio
 import logging
 import math
 from collections import Counter
+from dataclasses import asdict, dataclass
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -30,6 +31,7 @@ from .stockout import inbound_by_tick, outage_ticks
 from .world import ResetEvent, WorldTracker
 
 if TYPE_CHECKING:
+    from .events import EventBus
     from .intel import Intelligence
     from .poller import Poller
 
@@ -39,6 +41,17 @@ MIN_SHIPMENT = 1000.0  # smaller shipments are not worth sending, unless half th
 LOOKUP_WINDOW_SECONDS = 10.0  # a request cannot still be in flight this long after it was sent (the client gives up sooner)
 TERMINAL_LINES = ("SKIPPED", "REJECTED", "FAILED", "ARRIVED")
 _SENT = ("SUBMITTED", "IN_TRANSIT", "ARRIVED")
+
+
+@dataclass
+class Autopilot:
+    """Automatic approval within guard limits (ADR-07). Off at every start: a restart returns to manual."""
+
+    enabled: bool = False
+    min_confidence: float = 0.5  # Medium or better; Low-confidence proposals stay for a human
+    max_liters_per_proposal: float = 20000.0
+    max_liters_per_tick: float = 60000.0
+    max_proposals_per_tick: int = 10
 
 
 class ApiError(Exception):
@@ -67,10 +80,28 @@ class Executor:
         self._inflight: set[int] = set()
         self._last_retry_read: datetime | None = None
         self.counters: Counter[str] = Counter()
+        self.autopilot = Autopilot()
+        self.bus: EventBus | None = None
+        self._autopilot_tick: int | None = None
+        self._autopilot_used = [0.0, 0]  # litres and proposals approved in the current tick
         world.on_reset(self._on_reset)
 
     def attach(self, poller: Poller) -> None:
         self._poller = poller
+
+    def _publish(self, proposal_id: int) -> None:
+        if self.bus is not None:
+            p = self._db.proposal(proposal_id)
+            if p is not None:
+                self.bus.publish("proposal", {"id": proposal_id, "status": p["status"], "station_id": p["station_id"], "fuel_type": p["fuel_type"], "reason": p["status_reason"]})
+
+    def set_autopilot(self, changes: dict[str, Any], actor: str = "operator") -> Autopilot:
+        for key, value in changes.items():
+            setattr(self.autopilot, key, value)
+        self._db.audit(actor, "autopilot.changed", "autopilot", "autopilot", asdict(self.autopilot))
+        if self.bus is not None:
+            self.bus.publish("autopilot", asdict(self.autopilot))
+        return self.autopilot
 
     # -- operator actions ------------------------------------------------------------------
 
@@ -85,7 +116,9 @@ class Executor:
                 raise ApiError(409, "INVALID_STATE", f"proposal {proposal_id} changed state")
             self._db.audit(actor, "proposal.approved", "proposal", proposal_id, {"override_stale": override_stale, "snapshot_tick": proposal["snapshot_tick"], "liters": sum(l["proposed_quantity"] for l in proposal["lines"])})
             self.counters["approved"] += 1
-            return await self._run(proposal_id, override_stale=override_stale, actor=actor)
+            result = await self._run(proposal_id, override_stale=override_stale, actor=actor)
+            self._publish(proposal_id)
+            return result
 
     async def reject(self, proposal_id: int, *, actor: str = "operator") -> dict[str, Any]:
         async with self._lock:
@@ -96,6 +129,7 @@ class Executor:
                 raise ApiError(409, "INVALID_STATE", f"proposal {proposal_id} is {proposal['status']}, not open")
             self._db.audit(actor, "proposal.rejected", "proposal", proposal_id, {})
             self.counters["rejected"] += 1
+            self._publish(proposal_id)
             return self._db.proposal(proposal_id)  # type: ignore[return-value]
 
     # -- the gate ---------------------------------------------------------------------------
@@ -306,26 +340,57 @@ class Executor:
             log.exception("ledger tracking failed")
 
     async def after_poll(self) -> None:
-        """Run held approvals again when the gate has reopened. Never raises."""
+        """Once per read of the world: run held approvals again if the gate reopened, then the autopilot. Never raises."""
         snap, epoch = self._store.current, self._world.epoch
         if snap is None or epoch is None or self._lock.locked() or snap.fetched_at == self._last_retry_read:
             return
+        self._last_retry_read = snap.fetched_at  # once per read, not per tick: the gate can reopen while the tick stands still
         try:
-            held = self._db.proposals(epoch_id=epoch.id, statuses=("HELD",), limit=50)
-            if not held:
-                return
-            self._last_retry_read = snap.fetched_at  # once per read, not per tick: the gate can reopen while the tick stands still
-            for p in reversed(held):  # oldest first
-                async with self._lock:
-                    current = self._db.proposal(p["id"])
-                    if current is None or current["status"] != "HELD" or self._gate_reason(self._store.current, False) is not None:
-                        continue
-                    if not self._db.set_proposal_status(p["id"], "APPROVED", None, only_from=("HELD",)):
-                        continue
-                    self._db.audit("system", "proposal.resumed", "proposal", p["id"], {})
-                    await self._run(p["id"], override_stale=False, actor="system")
+            await self._resume_held(epoch.id)
+            await self._run_autopilot(epoch.id)
         except Exception:
-            log.exception("resuming held proposals failed")
+            log.exception("after-poll execution step failed")
+
+    async def _resume_held(self, epoch_id: int) -> None:
+        for p in reversed(self._db.proposals(epoch_id=epoch_id, statuses=("HELD",), limit=50)):  # oldest first
+            async with self._lock:
+                current = self._db.proposal(p["id"])
+                if current is None or current["status"] != "HELD" or self._gate_reason(self._store.current, False) is not None:
+                    continue
+                if not self._db.set_proposal_status(p["id"], "APPROVED", None, only_from=("HELD",)):
+                    continue
+                self._db.audit("system", "proposal.resumed", "proposal", p["id"], {})
+                await self._run(p["id"], override_stale=False, actor="system")
+                self._publish(p["id"])
+
+    async def _run_autopilot(self, epoch_id: int) -> None:
+        ap = self.autopilot
+        snap = self._store.current
+        if not ap.enabled or snap is None or self._gate_reason(snap, False) is not None:
+            return
+        if self._autopilot_tick != snap.tick:
+            self._autopilot_tick, self._autopilot_used = snap.tick, [0.0, 0]
+        open_now = self._db.proposals(epoch_id=epoch_id, statuses=("PROPOSED",), limit=100)
+
+        def urgency(p: dict) -> float:
+            hours = p["explanation"].get("headline", {}).get("hours_p90")
+            return float(hours) if hours is not None else 1e9
+
+        for p in sorted(open_now, key=urgency):
+            liters = float(sum(l["proposed_quantity"] for l in p["lines"]))
+            if p["confidence"] < ap.min_confidence or liters > ap.max_liters_per_proposal:
+                self.counters["autopilot_skipped_guard"] += 1
+                continue
+            if self._autopilot_used[1] >= ap.max_proposals_per_tick or self._autopilot_used[0] + liters > ap.max_liters_per_tick:
+                self.counters["autopilot_skipped_budget"] += 1
+                continue
+            try:
+                await self.approve(p["id"], actor="autopilot")
+            except ApiError:
+                continue  # it changed state under us: another actor decided it
+            self._autopilot_used[0] += liters
+            self._autopilot_used[1] += 1
+            self.counters["autopilot_approved"] += 1
 
     def _on_reset(self, event: ResetEvent) -> None:
         """Whatever the old world was doing is over: nothing in it can be confirmed any more."""
