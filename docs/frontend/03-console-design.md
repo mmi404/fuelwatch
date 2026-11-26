@@ -110,9 +110,11 @@ A refused or unanswered command is explained in place. Simulator commands are se
 
 The measured comparison of allocation policies, taken from the benchmark results in the repository by a script, never typed by hand.
 
-- Unmet litres per policy and scenario on bars from zero, with the service level printed beside each.
-- A tie is labelled as a tie.
-- The limits are on the page: one simulator seed, no injected faults.
+- Unmet litres per policy and scenario on bars from zero, with the service level printed beside each. Charts in one panel share a scale. The harder worlds compare the allocating policies without the do-nothing bar, which would flatten them; a second panel shows each scenario's best result against doing nothing.
+- A tie is labelled as a tie. The summary sentences are worked out from the figures.
+- Every measured figure is also in one table, with the saved run it came from. A policy that was not run in a scenario is said to be not run, and a figure a run did not record reads "not recorded". On a phone the table's fixed column carries both the scenario and the policy.
+- The limits are on the page: one simulator seed, no injected faults, worlds of our own, an untuned linear program, any send that went wrong, and whether repeated runs agreed.
+- The page is static. It does not call the backend, so its figures stay readable when the backend is down.
 
 ## States every part must design
 

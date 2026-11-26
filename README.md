@@ -16,7 +16,7 @@ Built for the BUP CSE FEST 2026 hackathon on top of the organizer-provided BUP F
 | Console: **Overview** (summary, cover board, pair detail, network, proposals, alerts) | Built |
 | Console: **Ledger** (shipments in flight, every shipment line, the audit trail) | Built |
 | Console: **Scenario** (run, pause, step and reset the simulator, autopilot and its limits, disruption timeline, demo script) | Built |
-| Console: **Results** page | Not built yet; the page says so |
+| Console: **Results** (replay benchmark: unmet litres and service level by policy, every measured figure, limits) | Built |
 | Docker Compose stack, Grafana dashboard, k6 load test, replay benchmark, demo drill script | Built |
 | Anomaly detection, Prometheus alert rules, user accounts, load shedding, CI | Not built |
 
@@ -123,7 +123,7 @@ Four of the design rules, each earned from testing the simulator (evidence in [t
 
 The simulator is deterministic, so every policy is tested on identical replays: reset, inject the same crisis, step the same number of ticks, score.
 
-Measured with `python -m fuelwatch.bench` on a second simulator (seed 12345, 192 ticks, no injected faults, one run per cell). Raw output, including every allocation, is in [bench/results](bench/results).
+Measured with `python -m fuelwatch.bench` on a second simulator (seed 12345, 192 ticks, no injected faults, one run behind each figure). Raw output, including every allocation, is in [bench/results](bench/results); the console's Results page is generated from it.
 
 The four simulator scenarios are gentle (depots start with plenty of stock), so greedy and the LP both reach a service level of 1.000 in all four, against 0.45 to 0.46 for no action. To see the policies differ we built four harder worlds that squeeze depot supply, routes and tanks together:
 
@@ -205,7 +205,7 @@ python ops/demo/drill.py clear
 
 The console is LIVE again within seconds and the held shipment is sent on its own.
 
-**4. Proof.** Show the replay table above and the Grafana dashboard: health mode, breakers, retries, simulator latency and hours to stockout.
+**4. Proof.** Show the **Results** page and the Grafana dashboard: health mode, breakers, retries, simulator latency and hours to stockout.
 
 ## Reproduce the measurements
 
@@ -214,6 +214,13 @@ Replay benchmark, on a second simulator so the demo world is untouched. It needs
 ```bash
 docker compose --profile bench up -d simulator-bench      # second simulator on :8001
 cd backend && pip install -e . && python -m fuelwatch.bench --sim http://localhost:8001 --scenarios stress --policies none,rules,greedy,lp --out ../bench/results
+```
+
+The Results page does not read `bench/results` while it runs. To show a new run there, regenerate its data file and rebuild the console (where a scenario and policy were run more than once, the newest run is shown):
+
+```bash
+cd frontend && npm run bench:data            # writes frontend/data/bench.json; needs Node
+docker compose up -d --build frontend        # from the repository root
 ```
 
 Load test, against the running stack. Keep `--no-deps`: without it Compose may recreate the backend as the test starts, and the first seconds then fail.

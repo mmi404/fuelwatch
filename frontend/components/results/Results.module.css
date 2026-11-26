@@ -1,0 +1,80 @@
+/* Results: the saved benchmark. Bars are thin, from zero, square at the baseline and rounded 2 px at the data end. */
+
+.page { display: grid; gap: var(--gap); padding: var(--gap); max-width: 1400px; margin: 0 auto; grid-template-columns: minmax(0, 1fr); }
+.page > * { min-width: 0; }
+@media (max-width: 639px) {
+  .page { padding: 12px; gap: 12px; }
+}
+
+.lede, .note, .finding { max-width: 76ch; line-height: 20px; }
+.note { color: var(--ink-2); font-size: 12px; line-height: 18px; margin-bottom: 12px; }
+.note:last-child { margin: 8px 0 0; }
+.footnote { padding: 8px 12px; color: var(--ink-2); font-size: 12px; line-height: 18px; }
+.finding { margin-top: 12px; padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--sunken); font-size: 14px; line-height: 22px; overflow-wrap: anywhere; }
+.policies { display: grid; gap: 8px 20px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin: 12px 0 0; }
+.policies > div { padding-top: 6px; border-top: 1px solid var(--rule); }
+.policies dt { font-weight: 600; }
+.policies dd { margin: 0; color: var(--ink-2); font-size: 12px; line-height: 18px; }
+
+/* small multiples */
+.multiples { display: grid; gap: 16px 32px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 480px), 1fr)); }
+.world { display: grid; gap: 4px; align-content: start; min-width: 0; padding-top: 10px; border-top: 1px solid var(--rule-strong); }
+.world h3 { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.what { color: var(--ink-2); font-size: 12px; line-height: 18px; }
+.verdict { font-weight: 600; line-height: 20px; }
+
+/* a bar chart that is also its own data table */
+.bars { width: 100%; margin-top: 4px; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+.bars thead th { padding: 0 6px 2px 0; font-size: 11px; font-weight: 400; text-align: left; color: var(--ink-3); border-bottom: 1px solid var(--rule); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the axis label carries the scale, so on a narrow screen it wraps rather than being cut off */
+.bars thead .trackHead { white-space: normal; line-height: 14px; vertical-align: bottom; }
+.bars thead th:first-child { width: 118px; }
+.bars thead th:nth-child(3) { width: 82px; }
+.bars thead th:nth-child(4) { width: 52px; }
+.bars thead .r { text-align: right; padding-right: 0; }
+.bars abbr { text-decoration: none; }
+.bars tbody th { padding: 3px 6px 3px 0; text-align: left; font-weight: 500; line-height: 18px; vertical-align: middle; overflow-wrap: anywhere; }
+.bars tbody td { height: 28px; padding: 3px 0; vertical-align: middle; }
+.bars tbody tr:hover { background: var(--sunken); }
+.bars tbody .trackCell { padding: 0 10px 0 0; }
+/* the left edge of the track is zero */
+.track { display: block; position: relative; height: 28px; border-left: 1px solid var(--ink-3); }
+.bar { position: absolute; left: 0; top: 8px; height: 12px; min-width: 2px; border-radius: 0 var(--r) var(--r) 0; background: var(--accent); }
+.bar[data-tone='nothing'] { background: var(--ink-3); }
+.value { text-align: right; white-space: nowrap; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12px; }
+.tag { display: inline-block; margin-left: 6px; padding: 0 4px; border: 1px solid var(--rule-strong); border-radius: var(--r); font: 500 11px/14px var(--font-mono); color: var(--ink-2); }
+
+@media (max-width: 479px) {
+  .bars thead th:first-child { width: 86px; }
+  .bars thead th:nth-child(3) { width: 74px; }
+  .bars thead th:nth-child(4) { width: 46px; }
+  .bars tbody .trackCell { padding-right: 6px; }
+  .tag { display: block; width: fit-content; margin-left: 0; }
+}
+
+/* wide tables scroll inside their own box, never the page */
+.scroll { overflow-x: auto; max-width: 100%; }
+.full, .runs { width: 100%; }
+.full th, .full td, .runs th, .runs td { white-space: nowrap; padding-left: 10px; padding-right: 10px; }
+.full tbody th, .runs tbody th { height: var(--row); text-align: left; text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 500; color: var(--ink); border-bottom: 1px solid var(--rule); }
+.full tbody th { position: sticky; left: 0; background: var(--surface); }
+.full tbody tr:last-child th, .runs tbody tr:last-child th { border-bottom: 0; }
+.full .under { display: none; }
+@media (max-width: 639px) {
+  .full .under { display: block; text-transform: none; letter-spacing: 0; font-weight: 400; line-height: 16px; color: var(--ink-2); }
+  .full thead .under { display: inline; text-transform: inherit; letter-spacing: inherit; font-weight: inherit; color: inherit; }
+  .full .policyCol { display: none; }
+  .full tbody th { padding-top: 3px; padding-bottom: 3px; box-shadow: inset -1px 0 0 var(--rule-strong); }
+  .full thead th:first-child { box-shadow: inset -1px 0 0 var(--rule-strong); max-width: 160px; }
+}
+.full thead th:first-child { position: sticky; left: 0; background: var(--surface); z-index: 1; }
+.full thead th { white-space: normal; vertical-align: bottom; line-height: 14px; padding-bottom: 4px; height: auto; }
+
+.limits { display: grid; gap: 6px; margin: 0; padding-left: 18px; list-style: disc; max-width: 84ch; line-height: 20px; }
+.subhead { margin: 16px 0 4px; font-size: 13px; font-weight: 600; }
+.code { font-family: var(--font-mono); overflow-wrap: anywhere; color: var(--ink); }
+
+@media (forced-colors: active) {
+  .bar { background: CanvasText; }
+  .track { border-left-color: CanvasText; }
+}
