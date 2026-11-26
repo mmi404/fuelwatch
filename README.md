@@ -232,6 +232,14 @@ The console is LIVE again within seconds and the held shipment is sent on its ow
 | `drill.py stale` | DEGRADED for as long as the fault lasted |
 | `drill.py stream` | No visible change: the fault refuses only new stream connections, and polling does not depend on the stream |
 
+**A crash of FuelWatch itself.** Services restart on their own if they exit. To end the backend process:
+
+```bash
+docker compose exec backend python -c "import os, signal; os.kill(1, signal.SIGTERM)"
+```
+
+In a run on one laptop the console lost the backend after about 1 s and was LIVE again about 7 s after the crash. The shipment ledger, kept on a volume, still had every line. The autopilot comes back off.
+
 **4. Proof.** Show the **Results** page and the Grafana dashboard: health mode, breakers, retries, simulator latency and hours to stockout.
 
 ## Reproduce the measurements

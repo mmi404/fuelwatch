@@ -1,10 +1,12 @@
 # FuelWatch stack. `docker compose up -d --build` starts the simulator, the backend, the operator console (:3000),
 # Prometheus and Grafana.
 # Profiles: `bench` adds a second simulator on :8001 for the replay benchmark, `loadtest` runs k6.
+# A service that exits on its own is started again; `docker compose stop` or `down` keeps it stopped.
 # Host ports can be moved with the *_PORT variables in .env (useful when something else already uses 8000).
 
 services:
   simulator:
+    restart: unless-stopped
     image: asifmahmoud414/bup-fuel-supply-simulator:1.0.0
     environment:
       SIMULATION_SPEED: ${SIMULATION_SPEED:-1}
@@ -24,6 +26,7 @@ services:
       - "${BENCH_SIMULATOR_PORT:-8001}:8000"
 
   backend:
+    restart: unless-stopped
     build: ./backend
     environment:
       SIMULATOR_URL: http://simulator:8000
@@ -41,6 +44,7 @@ services:
       - "${BACKEND_PORT:-8080}:8080"
 
   frontend:
+    restart: unless-stopped
     build:
       context: ./frontend
       args:
@@ -54,6 +58,7 @@ services:
       - "${FRONTEND_PORT:-3000}:3000"
 
   prometheus:
+    restart: unless-stopped
     image: prom/prometheus:v2.55.1
     command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=2d"]
     volumes:
@@ -66,6 +71,7 @@ services:
       - "${PROMETHEUS_PORT:-9090}:9090"
 
   grafana:
+    restart: unless-stopped
     image: grafana/grafana:11.3.0
     environment:
       GF_SECURITY_ADMIN_USER: admin
