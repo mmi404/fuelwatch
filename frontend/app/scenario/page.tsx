@@ -1,5 +1,6 @@
 'use client';
 
+import SystemHealth from '@/components/health/SystemHealth';
 import AutopilotPanel from '@/components/scenario/AutopilotPanel';
 import DemoScript from '@/components/scenario/DemoScript';
 import DisruptionTimeline from '@/components/scenario/DisruptionTimeline';
@@ -13,6 +14,7 @@ export default function ScenarioPage() {
       <h1 className="sr-only">Scenario: demo controls</h1>
       <div className={s.col}>
         <SimControl />
+        <SystemHealth />
         <DisruptionTimeline />
       </div>
       <div className={s.col}>

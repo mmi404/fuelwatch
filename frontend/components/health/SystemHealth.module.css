@@ -1,0 +1,28 @@
+/* System health board. Tokens only, so both themes follow. */
+
+.list { display: grid; margin: 0; padding: 0; list-style: none; }
+.row {
+  display: grid; grid-template-columns: 150px 108px minmax(0, 1fr); grid-template-areas: 'name state detail'; gap: 4px 12px; align-items: start;
+  padding: 7px 0; border-bottom: 1px solid var(--rule);
+}
+.row:first-child { padding-top: 0; }
+.name { grid-area: name; font-weight: 600; line-height: 20px; }
+.state { grid-area: state; }
+.detail { grid-area: detail; color: var(--ink-2); font-size: 12px; line-height: 20px; overflow-wrap: anywhere; }
+.overall { margin-left: auto; }
+
+.figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px 20px; margin: 12px 0 0; }
+.figures > div { min-width: 0; }
+.figures dd { font-size: 17px; line-height: 24px; font-weight: 500; overflow-wrap: anywhere; }
+.note { margin-top: 8px; color: var(--ink-2); font-size: 12px; line-height: 18px; }
+
+.failed {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--crit); border-left-width: 3px;
+  border-radius: var(--r); background: color-mix(in oklab, var(--crit) 8%, var(--surface));
+}
+
+/* phone: the detail takes its own line under the name and state */
+@media (max-width: 639px) {
+  .row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'name state' 'detail detail'; }
+  .figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
