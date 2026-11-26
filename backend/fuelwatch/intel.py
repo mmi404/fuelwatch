@@ -45,6 +45,7 @@ class Intelligence:
         self.assessed_tick: int | None = None
         self.snapshot: WorldSnapshot | None = None
         self.last_error: str | None = None
+        self.failed_stage: str | None = None  # "forecast" or "plan": the step that failed in the latest update
         world.on_reset(self._on_reset)
 
     def _on_reset(self, _: ResetEvent) -> None:
@@ -55,6 +56,7 @@ class Intelligence:
         self.assessed_tick = None
         self.plan = None
         self.proposal_counts = {}
+        self.failed_stage = None
 
     def _observe_demand(self, *args) -> None:
         try:
@@ -87,18 +89,22 @@ class Intelligence:
             self.last_error = None
         except Exception as exc:  # the previous assessments stay in place
             self.last_error = repr(exc)
+            self.failed_stage = "forecast"
             log.exception("intelligence update failed")
             return
         self._detect(snap)
         if self._proposals is None:
+            self.failed_stage = None
             return
         try:
             assessments = list(self.assessments)
             self.plan, _ = await asyncio.to_thread(plan_with_fallback, snap, self.forecaster, assessments, self._allocator, self.obs)
             self.obs.decision(self.plan.policy, time.perf_counter() - decided)
             self.proposal_counts = await asyncio.to_thread(self._sync_proposals, snap, assessments, self.plan)
+            self.failed_stage = None
         except Exception as exc:  # advice is optional: a failure here never hides the risk view
             self.last_error = repr(exc)
+            self.failed_stage = "plan"
             self.obs.ledger_error()
             log.exception("proposal update failed")
 

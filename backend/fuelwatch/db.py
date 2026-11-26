@@ -160,6 +160,11 @@ class Database:
         self._conn.executescript(_SCHEMA)
         self._conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
+    def ping(self) -> None:
+        """A cheap real read of the database file, for the health board. Raises when the database cannot be read."""
+        with self._lock:
+            self._conn.execute("SELECT id FROM world_epoch ORDER BY id DESC LIMIT 1").fetchone()
+
     def close(self) -> None:
         with self._lock:
             self._conn.close()

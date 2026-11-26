@@ -14,7 +14,7 @@ import re
 import time
 from typing import Any
 
-from prometheus_client import CollectorRegistry, Counter, Histogram, generate_latest
+from prometheus_client import CollectorRegistry, Counter, Histogram, ProcessCollector, generate_latest
 from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
 from prometheus_client.exposition import CONTENT_TYPE_LATEST
 
@@ -54,6 +54,7 @@ class Observability:
         self._http = Histogram("fuelwatch_http_request_seconds", "Our own API latency", ["route", "method", "status_class"], buckets=_LATENCY, registry=r)
         self._bound: dict[str, Any] = {}
         r.register(_StateCollector(self))
+        ProcessCollector(registry=r)  # process_cpu_seconds_total, process_resident_memory_bytes: from /proc, so Linux only
 
     def bind(self, **components: Any) -> None:
         """Give the scrape-time collector what it reads: store, client, world, intel, listener, executor, mode_fn."""

@@ -31,6 +31,7 @@ from .metrics import CONTENT_TYPE, HttpTimingMiddleware, Observability
 from .poller import Poller
 from .proposals import ProposalService
 from .snapshot import SnapshotStore
+from .status_board import StatusBoard
 from .world import WorldTracker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -166,6 +167,13 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
         info = meta()
         ready = info["mode"] in (Mode.LIVE.value, Mode.DEGRADED.value)
         return JSONResponse({"ready": ready, **info}, status_code=200 if ready else 503)
+
+    board = StatusBoard(db=db, store=store, client=client, intel=intel, listener=listener, executor=executor, obs=obs, settings=settings, mode_fn=mode)
+
+    @app.get("/api/health/components")
+    async def api_health_components() -> dict[str, Any]:
+        """Is FuelWatch itself healthy: each component's state, our API's latency and error rate, process use."""
+        return await board.report()
 
     @app.get("/api/snapshot")
     async def api_snapshot() -> dict[str, Any]:
