@@ -144,6 +144,8 @@ Labels come only from fixed sets (endpoint names, outcome enums, station and fue
 
 Alerts, in order of importance: breaker open for over 30 s; mode `STALE`; a fallback active for over 1 minute; stream stalled; forecast coverage outside 0.7 to 0.9; ledger errors above zero; an unexplained anomaly open; requests being shed (8.7). A burn-rate pair on the availability SLO (fast and slow window) is the standard form and is a stretch item.
 
+**Notification.** Optional and off by default: the `discord` Compose profile adds Alertmanager, which posts each alert to a Discord channel when it fires and when it clears. The webhook address is read from `.env` and is never in the repository. Without the profile, alerts show only in Prometheus and Grafana. Seen in a real channel: the stale-mode and breaker alerts of one injected outage, both FIRING and RESOLVED.
+
 ### Structured logs
 
 JSON lines with `ts`, `level`, `event`, `tick`, `epoch`, `request_id` and event-specific fields. Every API response carries an `X-Request-ID` header (a caller's own is kept), and the same id is on the log lines written while it was handled; background work has none. Lines that are not one of the events below have the event `log` and a `msg`. Event names are a fixed list so they can be searched and alerted on:

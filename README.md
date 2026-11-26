@@ -18,13 +18,15 @@ Built for the BUP CSE FEST 2026 hackathon on top of the organizer-provided BUP F
 | Console: **Scenario** (run, pause, step and reset the simulator, autopilot and its limits, disruption timeline, demo script) | Built |
 | Console: **Results** (replay benchmark: unmet litres and service level by policy, every measured figure, limits) | Built |
 | Docker Compose stack, Grafana dashboard, k6 load test, replay benchmark, demo drill script | Built |
-| Prometheus alert rules with unit tests, shown in Prometheus and Grafana (nothing sends notifications) | Built |
+| Prometheus alert rules with unit tests, shown in Prometheus and Grafana | Built |
+| Alerts in Discord (optional, off by default) | Built. In a run with an injected outage, the stale-data and circuit-breaker alerts reached a real channel when they fired and again when they cleared |
 | CI with GitHub Actions: backend tests, console type check and build, monitoring config checks, a Compose start-up test | Added in `.github/workflows/ci.yml`; results are on the repository's Actions tab |
 | Unusual demand: marked explained or unexplained, shown in the alert feed, at `/api/anomalies`, as a metric and as an alert | Built, with unit tests and an offline replay. In a live run with a demand spike, two stations were flagged as explained within a few ticks; the unexplained case has not been seen live |
 | Delivery checks: a supply delivery later than any announced delay explains, and a shipment that delivered less than was sent, in the alert feed and at `/api/delivery-checks` (no metric or alert) | Built, with unit tests. A live run in which 74 shipments arrived raised no finding; neither check has been seen firing on the live simulator |
 | System health board: backend, database, simulator link, forecast, decision engine, tick stream and send gate, with p95 latency, error rate, CPU and memory. At `/api/health/components`, on the **Scenario** page, with CPU and memory also in Grafana | Built, with unit tests; checked on the running stack |
 | Load shedding: under too many requests at once, low-priority reads get `503` with `Retry-After`; health probes, metrics and operator actions are never refused | Built, with unit tests; one load ramp showed it does not keep latency low at this load (see Load testing) |
-| User accounts | Not built |
+| Accounts with `operator` and `supervisor` roles (optional; one shared token by default) | Built, with tests; checked on a running stack. Keys listed in `.env`, not a full sign-in system |
+| Deploy to a VPS from GitHub after CI passes (optional, off by default) | Written; **not run against a real server** |
 
 The simulator's behaviour is documented in the [findings](docs/SIMULATOR_STATUS_FINDINGS.md). The whole system is designed in [docs/design](docs/design/README.md) (also as a [PDF](docs/design/FuelWatch-Engineering-Design.pdf)) and the console in [docs/frontend](docs/frontend/README.md). Those documents describe the design; this README says what exists.
 
@@ -101,7 +103,7 @@ Optional, about two minutes:
    docker compose exec alertmanager amtool alert add FuelWatchTest severity=warning --annotation=summary="Test alert from FuelWatch" --annotation=description="If you can read this, alerts reach Discord." --alertmanager.url=http://127.0.0.1:9093
    ```
 
-After about 10 seconds it should appear in the channel. From then on the ten alert rules post there when they fire and again when they clear. If nothing arrives, read `docker compose logs alertmanager`. CI checks the Alertmanager config; **delivery to a real Discord channel has not been tested yet**, so the test message is your check.
+After about 10 seconds it should appear in the channel. From then on the ten alert rules post there when they fire and again when they clear. If nothing arrives, read `docker compose logs alertmanager`. CI checks the Alertmanager config. Delivery has been seen in a real channel: during an injected outage, `FuelWatchDataStale` and `FuelWatchBreakerNotClosed` arrived as FIRING and, after recovery, as RESOLVED. The other eight rules have not been seen arriving.
 
 To switch it off, remove the two lines and run `docker compose --profile discord rm -sf alertmanager`.
 
@@ -343,7 +345,8 @@ backend/        FastAPI service and its tests (also the replay benchmark: python
 frontend/       Next.js operator console
 bench/results/  saved benchmark runs
 loadtest/       k6 script and saved results
-ops/            Prometheus config, Grafana provisioning and dashboard, demo drill script
+ops/            Prometheus config and alert rules, Alertmanager (Discord), Grafana provisioning and dashboard, demo drill script
+deploy/         the script a VPS runs to update itself (docs/DEPLOY.md)
 docs/           simulator findings, engineering design, console research and design
 simulator/      Compose file for the provided simulator on its own
 ```
