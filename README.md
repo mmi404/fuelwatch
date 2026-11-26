@@ -19,7 +19,8 @@ Built for the BUP CSE FEST 2026 hackathon on top of the organizer-provided BUP F
 | Console: **Results** (replay benchmark: unmet litres and service level by policy, every measured figure, limits) | Built |
 | Docker Compose stack, Grafana dashboard, k6 load test, replay benchmark, demo drill script | Built |
 | Prometheus alert rules with unit tests, shown in Prometheus and Grafana (nothing sends notifications) | Built |
-| Anomaly detection, user accounts, load shedding, CI | Not built |
+| CI with GitHub Actions: backend tests, console type check and build, monitoring config checks, a Compose start-up test | Added in `.github/workflows/ci.yml`; results are on the repository's Actions tab |
+| Anomaly detection, user accounts, load shedding | Not built |
 
 The simulator's behaviour is documented in the [findings](docs/SIMULATOR_STATUS_FINDINGS.md). The whole system is designed in [docs/design](docs/design/README.md) (also as a [PDF](docs/design/FuelWatch-Engineering-Design.pdf)) and the console in [docs/frontend](docs/frontend/README.md). Those documents describe the design; this README says what exists.
 
