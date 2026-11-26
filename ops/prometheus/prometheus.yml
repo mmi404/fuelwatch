@@ -2,6 +2,13 @@ global:
   scrape_interval: 5s
   evaluation_interval: 15s
 
+# The alertmanager service exists only with the `discord` Compose profile. Without it, Prometheus logs that it cannot
+# send when an alert fires; the alerts still show on its own page and in Grafana.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
 rule_files:
   - /etc/prometheus/alerts.yml
 

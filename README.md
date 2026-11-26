@@ -85,6 +85,26 @@ Each person types their key where the console asks for the operator token. The t
 - The console does **not** ship the token to the browser. Setting `DASHBOARD_PREFILL_TOKEN` and rebuilding pre-fills it as a convenience, which puts it in the JavaScript every visitor downloads: anyone who can open the console could then approve shipments, reset the simulator or turn the autopilot on.
 - Accounts are keys read from `.env`, not a sign-in service: no passwords to change in the console, no expiry, no lock-out after wrong tries, and nothing encrypts the key in transit. Put HTTPS in front before using them over a network you do not trust.
 
+## Alerts in Discord
+
+Optional, about two minutes:
+
+1. In Discord, open the channel's settings, then **Integrations > Webhooks > New Webhook > Copy Webhook URL**.
+2. Put these two lines in `.env`. The address lets anyone who has it post to the channel, so never commit it.
+   ```bash
+   COMPOSE_PROFILES=discord
+   DISCORD_WEBHOOK_URL=<the address you copied>
+   ```
+3. Start or update the stack: `docker compose up -d --wait`. If Prometheus was already running, also run `docker compose restart prometheus`.
+4. Send a test message:
+   ```bash
+   docker compose exec alertmanager amtool alert add FuelWatchTest severity=warning --annotation=summary="Test alert from FuelWatch" --annotation=description="If you can read this, alerts reach Discord." --alertmanager.url=http://127.0.0.1:9093
+   ```
+
+After about 10 seconds it should appear in the channel. From then on the ten alert rules post there when they fire and again when they clear. If nothing arrives, read `docker compose logs alertmanager`. CI checks the Alertmanager config; **delivery to a real Discord channel has not been tested yet**, so the test message is your check.
+
+To switch it off, remove the two lines and run `docker compose --profile discord rm -sf alertmanager`.
+
 ## The problem
 
 Fuel moves through a chain: import, port, depot, route, station, customer. A delayed shipment drains a depot, a demand spike empties a station, and a closed road makes a perfectly good allocation impossible. Operators have minutes to decide and little visibility.

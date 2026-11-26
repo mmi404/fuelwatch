@@ -1,0 +1,20 @@
+# Sends FuelWatch's Prometheus alerts to a Discord channel. Used only with the `discord` Compose profile.
+# The webhook address is a password for posting to the channel, so it is not written here: the container's start
+# command puts DISCORD_WEBHOOK_URL from .env into the file named below.
+route:
+  receiver: discord
+  group_by: [alertname]
+  group_wait: 10s # collect alerts of one kind that start together into one message
+  group_interval: 1m
+  repeat_interval: 3h # remind while an alert keeps firing
+
+receivers:
+  - name: discord
+    discord_configs:
+      - webhook_url_file: /tmp/discord_webhook
+        send_resolved: true
+        title: '{{ if eq .Status "firing" }}FIRING{{ else }}RESOLVED{{ end }}: {{ .CommonLabels.alertname }}{{ if gt (len .Alerts) 1 }} ({{ len .Alerts }}){{ end }}'
+        message: |-
+          {{ range .Alerts }}**{{ .Annotations.summary }}**{{ if .Labels.severity }} ({{ .Labels.severity }}){{ end }}
+          {{ .Annotations.description }}
+          {{ end }}

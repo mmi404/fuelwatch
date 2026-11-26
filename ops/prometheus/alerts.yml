@@ -1,6 +1,6 @@
 # Alert rules for FuelWatch, following the list in docs/design/08-resilience-and-observability.md section 8.5.
 # Prometheus evaluates them and shows them at http://localhost:9090/alerts, and the Grafana dashboard lists the ones
-# that are firing. No Alertmanager is configured, so nothing sends a notification.
+# that are firing. With the `discord` Compose profile, Alertmanager also posts them to a Discord channel.
 # Unit tests: alerts.test.yml in this folder.
 groups:
   - name: fuelwatch

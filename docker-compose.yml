@@ -1,6 +1,6 @@
 # FuelWatch stack. `docker compose up -d --build` starts the simulator, the backend, the operator console (:3000),
 # Prometheus and Grafana.
-# Profiles: `bench` adds a second simulator on :8001 for the replay benchmark, `loadtest` runs k6.
+# Profiles: `discord` posts alerts to a Discord channel, `bench` adds a second simulator on :8001 for the replay benchmark, `loadtest` runs k6.
 # A service that exits on its own is started again; `docker compose stop` or `down` keeps it stopped.
 # Host ports can be moved with the *_PORT variables in .env (useful when something else already uses 8000).
 
@@ -103,6 +103,31 @@ services:
       timeout: 3s
       retries: 24
       start_period: 30s
+
+  # Posts Prometheus alerts to Discord. Off unless the `discord` profile is on: see "Alerts in Discord" in the README.
+  alertmanager:
+    profiles: ["discord"]
+    restart: unless-stopped
+    image: prom/alertmanager:v0.27.0
+    environment:
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        [ -n "$$DISCORD_WEBHOOK_URL" ] || { echo "Set DISCORD_WEBHOOK_URL in .env" >&2; exit 1; }
+        umask 077
+        printf %s "$$DISCORD_WEBHOOK_URL" > /tmp/discord_webhook
+        exec /bin/alertmanager --config.file=/etc/alertmanager/alertmanager.yml --storage.path=/tmp/alertmanager
+    volumes:
+      - ./ops/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "127.0.0.1:${ALERTMANAGER_PORT:-9093}:9093" # no sign-in of its own, so this PC only
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9093/-/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
 
   k6:
     profiles: ["loadtest"]
