@@ -116,6 +116,7 @@ Labels come only from fixed sets (endpoint names, outcome enums, station and fue
 | `fuelwatch_breaker_state` | gauge | `breaker` | 0 closed, 1 half-open, 2 open |
 | `fuelwatch_snapshot_age_seconds`, `fuelwatch_snapshot_tick` | gauge | none | Freshness (NFR-1) |
 | `fuelwatch_snapshot_inconsistent_total`, `fuelwatch_snapshot_stale_total` | counter | none | Torn reads and stale flags |
+| `fuelwatch_invalid_payloads_total` | counter | `endpoint` | Simulator responses rejected as unreadable or the wrong shape; any increase raises an alert |
 | `fuelwatch_mode` | gauge | `mode` | Which mode is active |
 | `fuelwatch_world_resets_total` | counter | none | Resets detected |
 | `fuelwatch_stream_state`, `fuelwatch_stream_stalls_total` | gauge, counter | `state` | Stream health |
