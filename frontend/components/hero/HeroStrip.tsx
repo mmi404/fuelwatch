@@ -52,8 +52,9 @@ function nextProposal(proposals: Proposal[], ranked: Risk[]): Proposal | null {
   return open[0] ?? null;
 }
 
-function reviewQueue() {
-  const el = document.getElementById('proposal-queue');
+/** Brings the recommended proposal's card into view and focuses it, which also opens it if it is folded. */
+function showProposal(id: number) {
+  const el = document.getElementById(`proposal-${id}`) ?? document.getElementById('proposal-queue');
   if (!el) return;
   const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   el.scrollIntoView({ behavior: calm ? 'auto' : 'smooth', block: 'start' });
@@ -271,8 +272,9 @@ export default function HeroStrip() {
                   type="button"
                   className="btn primary sm"
                   onClick={() => {
-                    select(pairKey(next.station_id, next.fuel_type));
-                    reviewQueue();
+                    // An open pair detail sheet would cover the queue. Wait for it to close and hand focus back first.
+                    select(null);
+                    requestAnimationFrame(() => requestAnimationFrame(() => showProposal(next.id)));
                   }}
                 >
                   Review

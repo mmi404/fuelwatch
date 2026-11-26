@@ -122,7 +122,7 @@ export default function NetworkSvg({ world, risks, layout, views, hot, setHover,
   const names = new Map<string, string>([...world.depots, ...world.stations].map((n) => [n.id, shortName(n.name)]));
 
   return (
-    <svg className={styles.svg} viewBox={`0 0 ${layout.width} ${layout.height}`} width="100%" role="img" aria-label={label} focusable="false">
+    <svg className={styles.svg} viewBox={`0 0 ${layout.width} ${layout.height}`} width="100%" role="group" aria-label={label} focusable="false">
       <defs>
         <pattern id={patternId} width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
           <line x1="0" y1="0" x2="0" y2="7" className={styles.hatchLine} strokeWidth="2" />
@@ -140,7 +140,8 @@ export default function NetworkSvg({ world, risks, layout, views, hot, setHover,
         <text x={layout.zone.x1 - 2} y={rulerY + 19} textAnchor="end">arrive</text>
       </g>
 
-      {/* edges */}
+      {/* edges. Routes, labels and shipments are drawing only for a screen reader: the matrix and the shipment list say the same */}
+      <g aria-hidden="true">
       {edgeOrder.map((e) => {
         const r = e.route;
         const closed = r.status !== 'AVAILABLE';
@@ -160,8 +161,10 @@ export default function NetworkSvg({ world, risks, layout, views, hot, setHover,
           </g>
         );
       })}
+      </g>
 
       {/* closed stamps and transit times */}
+      <g aria-hidden="true">
       {layout.edges.map((e) => {
         const dim = hot != null && !hot.routes.has(e.route.id);
         const stamp = stamps.get(e.route.id);
@@ -186,6 +189,7 @@ export default function NetworkSvg({ world, risks, layout, views, hot, setHover,
           </g>
         );
       })}
+      </g>
 
       {/* depots */}
       {layout.depots.map((b) => {
@@ -200,7 +204,7 @@ export default function NetworkSvg({ world, risks, layout, views, hot, setHover,
             className={cx(styles.node, dim && styles.dim, hot?.depots.has(b.id) && styles.nodeHot)}
             transform={`translate(${b.x},${b.y})`}
             tabIndex={0}
-            role="button"
+            role="group"
             aria-label={`${d.name}, ${open ? 'open' : `outage, status ${d.status.toLowerCase()}`}. ${FUELS.map((f) => `${fuelName(f)} ${int(d.inventory[f] ?? 0)} of ${int(d.capacity[f] ?? 0)} litres`).join(', ')}.`}
             onMouseEnter={() => setHover({ kind: 'depot', id: b.id })}
             onMouseLeave={() => setHover(null)}
@@ -306,6 +310,7 @@ export default function NetworkSvg({ world, risks, layout, views, hot, setHover,
       })}
 
       {/* shipments in flight */}
+      <g aria-hidden="true">
       {ships.map((s) => {
         const e = edgeById.get(s.route.id);
         const lab = shipLabels.get(s.id);
@@ -327,6 +332,7 @@ export default function NetworkSvg({ world, risks, layout, views, hot, setHover,
           </g>
         );
       })}
+      </g>
     </svg>
   );
 }

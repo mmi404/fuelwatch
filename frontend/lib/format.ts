@@ -17,6 +17,7 @@ export const points = (x: number) => `${x >= 0 ? '+' : '−'}${Math.abs(x * 100)
 /** Hours of cover as a short figure: "6.5 h", "45 min", "24+ h". `cap` is how far the backend looks ahead; null means no stockout within it. */
 export function hours(h: number | null | undefined, cap = 24): string {
   if (h == null) return `${cap}+ h`;
+  if (h <= 0) return 'now';
   if (h < 1) return `${Math.max(1, Math.round(h * 60))} min`;
   if (h >= cap) return `${cap}+ h`;
   return `${h < 10 ? h.toFixed(1) : Math.round(h)} h`;

@@ -33,8 +33,7 @@
   --octane: #8a5a3c;
 
   /* chart */
-  --band-core: color-mix(in oklab, var(--ink) 16%, transparent);
-  --band-outer: color-mix(in oklab, var(--ink) 7%, transparent);
+  --band: color-mix(in oklab, var(--ink) 11%, transparent);
   --grid: var(--rule);
   --shadow-float: 0 6px 24px rgb(0 0 0 / 0.14), 0 0 0 1px var(--rule-strong);
 
@@ -74,8 +73,7 @@
     --petrol: #e58bc0;
     --diesel: #4fd0d8;
     --octane: #c99468;
-    --band-core: color-mix(in oklab, var(--ink) 20%, transparent);
-    --band-outer: color-mix(in oklab, var(--ink) 9%, transparent);
+    --band: color-mix(in oklab, var(--ink) 14%, transparent);
     --shadow-float: 0 8px 28px rgb(0 0 0 / 0.5), 0 0 0 1px var(--rule-strong);
   }
 }
@@ -100,8 +98,7 @@
   --petrol: #e58bc0;
   --diesel: #4fd0d8;
   --octane: #c99468;
-  --band-core: color-mix(in oklab, var(--ink) 20%, transparent);
-  --band-outer: color-mix(in oklab, var(--ink) 9%, transparent);
+  --band: color-mix(in oklab, var(--ink) 14%, transparent);
   --shadow-float: 0 8px 28px rgb(0 0 0 / 0.5), 0 0 0 1px var(--rule-strong);
 }
 :root[data-density='compact'] {

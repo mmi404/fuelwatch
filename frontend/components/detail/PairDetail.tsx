@@ -232,13 +232,12 @@ function Sheet({ pair }: { pair: string }) {
             <ul className={css.keys} aria-label="Chart key">
               <li><span className={css.kObs} />observed</li>
               <li><span className={css.kExp} />projected, expected demand</li>
-              <li><span className={css.kCore} /><span className={css.kOuter} />cautious band</li>
+              <li><span className={css.kBand} />cautious band</li>
               {inbound.length > 0 && <li><span className={css.kShip} />shipment arrives</li>}
             </ul>
             <div className={css.caption}>
               <p>
-                The band is a cautious bound, <strong>wider than reality</strong>: its lower edge runs demand at P90 in every tick at once, its upper edge at P10 in every tick. The darker core goes half as far from the
-                expected line. It is not a guarantee.
+                The band is a cautious bound, <strong>wider than reality</strong>: its lower edge runs demand at P90 in every tick at once, its upper edge at P10 in every tick. It is not a guarantee.
               </p>
               <p>
                 {observedCount < MIN_OBSERVED ? `Observed history is still collecting (${observedCount} of ${MIN_OBSERVED} readings). ` : `Observed: ${observedCount} readings. `}

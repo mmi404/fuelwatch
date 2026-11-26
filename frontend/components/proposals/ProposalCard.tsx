@@ -52,6 +52,10 @@ export interface CardProps {
   onClearError: () => void;
   onDismiss: (() => void) | undefined;
   onAskToken: () => void;
+  /** Short form of a waiting card: the sentence and two facts, with no way to decide until it is opened. */
+  collapsed: boolean;
+  /** Undefined when there is nothing to fold: one waiting card, or a card that is not waiting. */
+  onToggle: ((open: boolean) => void) | undefined;
 }
 
 const clockOf = (ctx: Ctx, tick: number) => tickClock(ctx.simTime, ctx.simTick, tick, ctx.tickMinutes);
@@ -250,6 +254,9 @@ export function ProposalCard(props: CardProps) {
   const inFlight = busy != null;
   const conf = v.confidence;
   const lvl = pairLevel ?? v.level;
+  const { collapsed } = props;
+  const bodyId = `proposal-${p.id}-body`;
+  const hasEffect = v.effect.before != null || v.hoursP90 != null || v.effect.after != null;
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (!open || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
@@ -259,7 +266,9 @@ export function ProposalCard(props: CardProps) {
     if (k !== 'a' && k !== 'r') return;
     e.preventDefault();
     e.stopPropagation();
-    props.onAct(k === 'a' ? 'approve' : 'reject');
+    // A short card only opens: nobody should decide without the reasons on screen.
+    if (collapsed) props.onToggle?.(true);
+    else props.onAct(k === 'a' ? 'approve' : 'reject');
   };
 
   const why = evidence(v, (t) => clockOf(ctx, t));
@@ -274,8 +283,10 @@ export function ProposalCard(props: CardProps) {
       tabIndex={-1}
       className={`${s.card} ${variant === 'active' ? s.cardActive : ''}`}
       aria-labelledby={headingId}
-      aria-keyshortcuts={open ? 'A R' : undefined}
+      aria-keyshortcuts={open && !collapsed ? 'A R' : undefined}
       onKeyDown={onKeyDown}
+      // Focusing the card itself (another panel's "open proposal", or a click on it) opens it.
+      onFocus={(e) => collapsed && e.target === e.currentTarget && props.onToggle?.(true)}
       data-status={p.status}
     >
       <header className={s.head}>
@@ -285,13 +296,34 @@ export function ProposalCard(props: CardProps) {
           {lvl && <LevelChip level={lvl} />}
           <FuelTag fuel={p.fuel_type} />
           {open && <Expiry p={p} ctx={ctx} />}
+          {props.onToggle && (
+            <button
+              type="button"
+              className={`btn sm ${s.toggle}`}
+              aria-expanded={!collapsed}
+              aria-controls={collapsed ? undefined : bodyId}
+              aria-describedby={headingId}
+              // keeps the press from focusing the card first, which would open it and let the click close it again
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => props.onToggle?.(collapsed)}
+            >
+              {collapsed ? 'Show details' : 'Hide details'}
+            </button>
+          )}
         </div>
       </header>
 
       {variant === 'active' && <Outcome p={p} v={v} ctx={ctx} fresh={decided === 'approve'} />}
 
-      {variant === 'open' && (
-        <>
+      {variant === 'open' && collapsed && (
+        <p className={s.brief}>
+          {conf.level} confidence.
+          {hasEffect && ` Cover at high demand (P90): ${cover(v.effect.before ?? v.hoursP90)}; if sent: ${cover(v.effect.after)}.`}
+        </p>
+      )}
+
+      {variant === 'open' && !collapsed && (
+        <div id={bodyId} className={s.body}>
           <Facts p={p} v={v} ctx={ctx} open />
 
           <div className={s.rows}>
@@ -317,7 +349,7 @@ export function ProposalCard(props: CardProps) {
 
             <div className="label">If ignored</div>
             <p>
-              {v.effect.before != null || v.hoursP90 != null || v.effect.after != null ? (
+              {hasEffect ? (
                 <>
                   Cover is {cover(v.effect.before ?? v.hoursP90)} at high demand (P90). Sending lifts it to {cover(v.effect.after)}
                   {v.effect.levelAfter && (
@@ -419,7 +451,7 @@ export function ProposalCard(props: CardProps) {
               )}
             </div>
           </div>
-        </>
+        </div>
       )}
 
       {error && (

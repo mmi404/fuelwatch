@@ -25,9 +25,6 @@ export interface ProjPoint {
   low: number;
   /** Cautious upper edge: demand at its P10 in every tick. */
   high: number;
-  /** Darker core: half the distance from the expected path to each edge. */
-  coreLow: number;
-  coreHigh: number;
 }
 
 export interface Projection {
@@ -95,16 +92,12 @@ export function project(inventory: number, capacity: number, rows: ForecastRow[]
   const mean = walk(inventory, capacity, (k) => at(k).p50, arrivals, nowTick, horizon);
   const hi = walk(inventory, capacity, (k) => at(k).p90, arrivals, nowTick, horizon);
   const lo = walk(inventory, capacity, (k) => at(k).p10, arrivals, nowTick, horizon);
-  const coreHi = walk(inventory, capacity, (k) => at(k).p50 + 0.5 * (at(k).p90 - at(k).p50), arrivals, nowTick, horizon);
-  const coreLo = walk(inventory, capacity, (k) => at(k).p50 + 0.5 * (at(k).p10 - at(k).p50), arrivals, nowTick, horizon);
 
   const points: ProjPoint[] = mean.path.map((m, k) => ({
     tick: nowTick + k,
     mean: m,
     low: hi.path[k],
     high: lo.path[k],
-    coreLow: coreHi.path[k],
-    coreHigh: coreLo.path[k],
   }));
 
   let cover = 0;

@@ -79,6 +79,8 @@ On a wide screen, the left column holds the cover board and the network, and the
 
 **Pair detail chart.** The y axis runs from zero to tank capacity. Left of "now": observed stock, solid. Right: stock projected with expected demand, inside a band built from the P10 and P90 demand paths. The projection covers at most 96 ticks, adds only shipments already on the road, and respects tank capacity. The caption reads as a warning that the band is cautious and is not a guarantee.
 
+**Proposal queue.** When several proposals wait, the most urgent one is shown in full and the others are folded to the action, status, expiry, confidence and cover before and after. A folded card has no approve or reject button, and `a` or `r` on it only opens it, so no decision is made with the reasons off screen. A card that has been open stays open when a more urgent one arrives, so buttons do not move out from under the pointer. "Review" in the summary strip goes to the recommended card and opens it.
+
 **Proposal actions.** Without a token, an action asks for it and keeps the operator's place. A refusal appears inside the card: a rejected token (401), a state that has changed (409), an invalid request (422), a missing proposal (404), or a backend that cannot be reached or has writes disabled (503 or network error). Approval sends an upper bound; the backend re-checks fresh state before it sends fuel. When data is stale, approving needs an explicit override that is cleared after use.
 
 ### Ledger

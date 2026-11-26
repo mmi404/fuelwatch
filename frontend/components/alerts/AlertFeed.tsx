@@ -15,7 +15,7 @@ const CAP = 6;
 
 type Item = { kind: 'cause'; key: string; hideKey: string; worst: Level; cause: Cause } | { kind: 'station'; key: string; hideKey: string; worst: Level; station: StationEntry };
 
-const coverText = (h: number | null) => (h == null ? 'no estimate' : leftText(h));
+const coverText = (h: number | null) => (h == null ? 'no estimate' : h <= 0 ? 'now' : leftText(h));
 
 /** One fuel letter tile with its level glyph. The word is read out by screen readers. */
 function FuelLevel({ alert }: { alert: Alert }) {

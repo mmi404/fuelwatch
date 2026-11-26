@@ -181,7 +181,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </button>
         <button type="button" className={`${s.cell} ${s.btnCell} ${s.lastCell}`} onClick={openPalette} aria-label="Open command palette" title="Command palette (Ctrl or Cmd K)">
           <IconSearch />
-          <span className={`${s.stack} ${s.hideNarrow}`} aria-hidden="true">
+          <span className={`${s.stack} ${s.collapse} ${s.hideNarrow}`} aria-hidden="true">
             <span className={s.cap}>Palette</span>
             <span className={s.val}>Ctrl K</span>
           </span>

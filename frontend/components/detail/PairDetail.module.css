@@ -43,9 +43,7 @@
 .keys li { display: inline-flex; align-items: center; gap: 5px; }
 .kObs, .kExp { display: inline-block; width: 14px; border-top: 2px solid var(--ink); }
 .kExp { border-top-color: color-mix(in oklab, var(--ink) 50%, var(--surface)); }
-.kCore, .kOuter { display: inline-block; width: 10px; height: 10px; }
-.kCore { margin-right: -5px; background: var(--band-core); }
-.kOuter { background: var(--band-outer); }
+.kBand { display: inline-block; width: 14px; height: 10px; border: 1px solid var(--rule-strong); background: var(--band); }
 .kShip { display: inline-block; width: 9px; height: 8px; background: var(--ink); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
 
 .caption { display: grid; gap: 4px; margin-top: 8px; font-size: 12px; line-height: 1.45; color: var(--ink-2); }

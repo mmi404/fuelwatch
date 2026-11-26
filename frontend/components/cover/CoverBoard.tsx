@@ -313,7 +313,7 @@ export default function CoverBoard() {
                 <tr>
                   <th scope="col" className={styles.hLevel}>Level</th>
                   <th scope="col">Station</th>
-                  <th scope="col">Fuel</th>
+                  <th scope="col" className={styles.hFuel}>Fuel</th>
                   <th scope="col" className={styles.r}>Stock</th>
                   <th scope="col" className={styles.axisTh}>
                     <span className="sr-only">Hours to stockout, axis 0 to {AXIS_H} hours</span>
@@ -330,7 +330,7 @@ export default function CoverBoard() {
                   </th>
                   <th scope="col" className={styles.r}>Expected</th>
                   <th scope="col" className={styles.r}>Inbound</th>
-                  <th scope="col">Stock trend</th>
+                  <th scope="col"><span className="sr-only">Stock </span>Trend</th>
                 </tr>
               </thead>
               <tbody>

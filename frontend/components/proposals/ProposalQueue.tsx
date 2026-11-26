@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Proposal, Route } from '@/lib/api';
 import { int, liters } from '@/lib/format';
 import { useLive } from '@/lib/world';
@@ -35,6 +35,8 @@ export default function ProposalQueue() {
   const [overrides, setOverrides] = useState<Record<number, boolean>>({});
   const [busy, setBusy] = useState<Record<number, Act>>({});
   const inFlight = useRef<Set<number>>(new Set());
+  /** Which waiting cards are open. A card with no entry is open only if it is first in the queue. */
+  const [openCards, setOpenCards] = useState<Record<number, boolean>>({});
 
   const act = useCallback(
     async (p: Proposal, kind: Act) => {
@@ -114,6 +116,12 @@ export default function ProposalQueue() {
     return { awaiting, active, history };
   }, [proposals, risks, marks]);
 
+  // The first card stays open when a more urgent one arrives above it, so its buttons do not vanish under the pointer.
+  const firstId = groups.awaiting[0]?.p.id;
+  useEffect(() => {
+    if (firstId !== undefined) setOpenCards((o) => (o[firstId] === undefined ? { ...o, [firstId]: true } : o));
+  }, [firstId]);
+
   const loading = lastOkAt == null && !error;
   const ap = status?.autopilot;
   const meta = loading ? 'loading' : `${groups.awaiting.length} awaiting decision`;
@@ -126,6 +134,9 @@ export default function ProposalQueue() {
 
   const card = (x: (typeof groups.awaiting)[number], variant: 'open' | 'active') => {
     const m = marks[x.p.id];
+    // a card that is sending, or that holds a refusal to read, is never folded
+    const foldable = variant === 'open' && groups.awaiting.length > 1 && !busy[x.p.id] && !m?.error;
+    const isShown = openCards[x.p.id] ?? x.p.id === firstId;
     return (
       <li key={x.p.id}>
         <ProposalCard
@@ -143,6 +154,8 @@ export default function ProposalQueue() {
           onClearError={() => clearError(x.p.id)}
           onDismiss={variant === 'active' && m && !['APPROVED', 'EXECUTING'].includes(x.p.status) ? () => dismiss(x.p.id) : undefined}
           onAskToken={() => ask(true)}
+          collapsed={foldable && !isShown}
+          onToggle={foldable ? (v) => setOpenCards((o) => ({ ...o, [x.p.id]: v })) : undefined}
         />
       </li>
     );

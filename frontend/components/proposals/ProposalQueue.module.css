@@ -21,6 +21,7 @@
 
 .card {
   position: relative;
+  scroll-margin-top: calc(var(--topbar) + 8px);
   padding: var(--pad) var(--pad) var(--pad) calc(var(--pad) - 2px);
   border-top: 1px solid var(--rule);
   border-left: 2px solid transparent;
@@ -35,6 +36,10 @@
 .sentence { font-size: 14px; font-weight: 600; line-height: 1.35; text-wrap: balance; }
 .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; }
 .warnText { color: var(--warn); font-weight: 500; }
+.toggle { margin-left: auto; }
+/* the open part of a waiting card keeps the card's own spacing */
+.body { display: grid; gap: 10px; }
+.brief { font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 
 .facts { display: grid; gap: 8px; }
 .factLineTitle { margin-bottom: 2px; }

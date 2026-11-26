@@ -224,13 +224,8 @@ export default function StockChart({ name, nowTick, tickMinutes, simTime, capaci
           <text x={M.left - 6} y={12} textAnchor="end">L</text>
         </g>
 
-        {/* the fan: outer band then darker core, from the real forecast */}
-        {proj.length > 1 && (
-          <g>
-            <path d={band((p) => p.high, (p) => p.low)} fill="var(--band-outer)" />
-            <path d={band((p) => p.coreHigh, (p) => p.coreLow)} fill="var(--band-core)" />
-          </g>
-        )}
+        {/* one band: the stock paths if demand runs at P10, or at P90, in every tick */}
+        {proj.length > 1 && <path d={band((p) => p.high, (p) => p.low)} fill="var(--band)" />}
 
         {/* cover target: 24 ticks of expected demand */}
         {cover !== null && (

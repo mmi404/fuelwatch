@@ -122,7 +122,8 @@
   .lvChip, .fuelFull { display: none; }
   .lvGlyph { display: inline-flex; }
   .fuelShort { display: inline-block; }
-  .hLevel { font-size: 0; }
+  /* the columns are too narrow for these headings; the text stays for screen readers */
+  .table th.hLevel, .table th.hFuel { font-size: 0; text-overflow: clip; }
 }
 
 /* narrow: each row is a two-line item */
