@@ -8,15 +8,15 @@ How much of this design exists is stated in the project README, which is the one
 
 | Target | State |
 |---|---|
-| NFR-1 Snapshot age at most 2 s | Not measured; will be read from the snapshot-age metric during a run |
-| NFR-2 `/api/snapshot` p95 under 100 ms | Not measured |
-| NFR-3 At most 30 requests per second to the simulator | Calculated at about 22 (part 4.1); not measured |
+| NFR-1 Snapshot age at most 2 s | Met in a 90 s run at about one tick a second with the autopilot on: at most 1.06 s |
+| NFR-2 `/api/snapshot` p95 under 100 ms | Met at light load: p95 33 ms over 1,324 requests in the same run. Not measured under the k6 load, where other read endpoints reached a p95 of 170 ms at 200 requests/s |
+| NFR-3 At most 30 requests per second to the simulator | Met in the same run: 14.5 a second on average, 17.9 in the busiest 20 s |
 | NFR-4 Recovery within 10 s | Measured on one laptop: live again 2.7 to 3.7 s after clearing outages of 16, 40 and 55 s (up to 23.7 s before the breaker's cool-down was capped at 5 s) |
-| NFR-5 Zero duplicates and avoidable losses | Not measured |
+| NFR-5 Zero duplicates and avoidable losses | No duplicate and no failed shipment among the 18 of that run, and no rejected send in the replay benchmark; the forced-timeout drill (D12) was not run |
 | NFR-6 Honest degraded state | Checked by the drill checklist |
 | NFR-7 Start in under 5 minutes | Not measured |
 | NFR-8 Reproducible benchmark | The simulator's determinism is verified (identical state hashes across two runs); the benchmark itself is not run |
-| NFR-9 Bounded series count | Not measured |
+| NFR-9 Bounded series count | 379 series after that run, 6 more than a minute earlier as new outcomes first appeared; a long run was not done. A unit test checks that labels come from fixed sets |
 
 ## 10.3 Risks
 

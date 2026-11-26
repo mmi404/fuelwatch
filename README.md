@@ -161,6 +161,18 @@ Prometheus metrics for simulator calls, snapshot age and tick, health mode, brea
 docker run --rm -v "$PWD/ops/prometheus:/rules:ro" -w /rules --entrypoint promtool prom/prometheus:v2.55.1 test rules alerts.test.yml
 ```
 
+## Targets, measured
+
+From one 90 second run on one laptop (simulator at about one tick a second, autopilot on, no faults) and the recovery drills. They are short runs, not a long soak.
+
+| Target | Limit | Measured |
+|---|---|---|
+| Age of the data being served | at most 2 s | at most 1.06 s |
+| `/api/snapshot`, 95th percentile, light load | under 100 ms | 33 ms over 1,324 requests |
+| Requests to the simulator | at most 30 a second | 14.5 on average, 17.9 in the busiest 20 s |
+| Duplicate or failed shipments | none | none among 18 shipments |
+| Live again after a fault clears | within 10 s | 2.7 to 3.7 s after outages of 16, 40 and 55 s |
+
 ## Load testing
 
 k6 open-model tests (`constant-arrival-rate`, then `ramping-arrival-rate` to find the knee), aimed at FuelWatch, never at the simulator, and repeated under an injected latency fault.
