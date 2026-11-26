@@ -1,0 +1,26 @@
+# The knee ramp rerun with load shedding on, default limits (SCENARIO=knee). Simulator paused at tick 130, autopilot off.
+# Backend samples taken every 2 s during the run (the sampling window began shortly before the ramp):
+#   mode samples: {'LIVE': 19, 'no-answer': 7, 'STALE': 4}
+#   livez: 24 of 30 answered, slowest 10.01 s
+#   shed: {'essential': 39798.0} | breakers opened: {'read': 0, 'write': 0} | mode now: LIVE
+
+     ✗ status 200
+      ↳  7% — ✓ 2999 / ✗ 39793
+     checks.........................: 7.00%  2999 out of 42792
+     data_received..................: 21 MB  161 kB/s
+     data_sent......................: 4.0 MB 31 kB/s
+     dropped_iterations.............: 34597  268.049355/s
+     http_req_blocked...............: avg=379.02µs min=1.88µs med=10.05µs  p(90)=755.16µs p(95)=1.77ms   p(99)=6.59ms max=92.97ms
+     http_req_connecting............: avg=232.69µs min=0s     med=0s       p(90)=467.61µs p(95)=1ms      p(99)=4.19ms max=82.47ms
+   ✗ http_req_duration..............: avg=7.41s    min=1.1ms  med=7.34s    p(90)=9.9s     p(95)=15.58s   p(99)=35.62s max=46.09s
+       { expected_response:true }...: avg=14.6s    min=3.07ms med=9.93s    p(90)=36.91s   p(95)=39.01s   p(99)=45.61s max=46.09s
+   ✗ http_req_failed................: 92.99% 39793 out of 42792
+     http_req_receiving.............: avg=586.08µs min=19.8µs med=303.14µs p(90)=1.01ms   p(95)=1.43ms   p(99)=3.98ms max=620.59ms
+     http_req_sending...............: avg=27.13ms  min=7.22µs med=30.07µs  p(90)=205.13µs p(95)=618.74µs p(99)=5.64ms max=7.51s
+     http_req_tls_handshaking.......: avg=0s       min=0s     med=0s       p(90)=0s       p(95)=0s       p(99)=0s     max=0s
+     http_req_waiting...............: avg=7.38s    min=1.02ms med=7.34s    p(90)=9.75s    p(95)=14.55s   p(99)=35.49s max=46.09s
+     http_reqs......................: 42792  331.542273/s
+     iteration_duration.............: avg=8.6s     min=6.04ms med=7.53s    p(90)=13.23s   p(95)=29.61s   p(99)=40.32s max=46.11s
+     iterations.....................: 10698  82.885568/s
+     vus............................: 44     min=1              max=1000
+     vus_max........................: 1000   min=100            max=1000
