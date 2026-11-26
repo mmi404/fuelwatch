@@ -233,6 +233,8 @@ flag   = at least 2 of the last 3 ticks have abs(z) > 3, using the median and MA
 
 Two non-demand checks use the same machinery: a delivery that arrives later than its planned tick without a `shipment_delay` event, and an allocation that delivers less than its `executed_quantity` (fuel lost to headroom).
 
+**As built.** Each tick is compared with two one-step forecasts, one including the announced demand spikes and one without them. A departure only from the second is explained by the spike. A departure from the first is unexplained unless the station's demand multiplier accounts for it. A tick counts when abs(z) is over 3, also after centring and widening by the median and MAD of up to 48 earlier values, and demand differs from the forecast by more than 15%. Two of the last three ticks must depart the same way, after 16 ticks of history. Stations in outage are not flagged. The late-delivery and lost-fuel checks, and scheduled supply changes as an explanation, are not implemented. The lower confidence applies when a proposal is created.
+
 ## 6.6 Explanation card
 
 A recommendation is only useful if the operator can see why. Each proposal carries:

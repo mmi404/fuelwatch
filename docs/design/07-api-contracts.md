@@ -26,6 +26,7 @@ Two interfaces matter: the one FuelWatch **exposes** to its dashboard and to ope
 | GET | `/api/status` | Mode, tick and age, epoch and resets, breaker states, retry budget, history and forecast health, tick-stream state, execution counters and whether the gate is open, autopilot settings, proposals by status, open alerts, versions | `200` | no |
 | GET | `/api/risks` | One row per station and fuel: hours to stockout P50 and P90, risk, level, ordered by urgency | `200 [..]` | no |
 | GET | `/api/forecast` | Demand forecast with P10, P50, P90, filterable by station and fuel | `200 [..]` | no |
+| GET | `/api/anomalies` | Demand anomalies open now, unexplained first: station, kind (`explained` or `unexplained`), direction, deviation, z, first and last flagged tick, summary | `200 [..]` | no |
 | GET | `/api/proposals` | Proposals of the current world, newest first, with lines and explanation cards. Query: `status` (comma list), `limit` 1 to 200 | `200 [..]` or `422` | no |
 | GET | `/api/proposals/{id}` | One proposal with lines and attempts | `200` or `404` | no |
 | GET | `/api/alerts` | Stockout alerts of the current world, newest first. Query: `state` (comma list of open, acknowledged, cleared) | `200 [..]` | no |
