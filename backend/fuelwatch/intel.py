@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from .allocate import Plan
 from .anomaly import Anomaly, AnomalyDetector
 from .db import Database
+from .delivery_checks import DeliveryChecker
 from .forecast import Z90, DemandForecaster, hour_of_day
 from .metrics import NOOP
 from .planner import plan_with_fallback
@@ -41,6 +42,7 @@ class Intelligence:
         self.detector = AnomalyDetector()
         self.anomalies: tuple[Anomaly, ...] = ()
         self.forecaster.on_station_tick = self._observe_demand
+        self.delivery_checker = DeliveryChecker()
         self.assessments: tuple[Assessment, ...] = ()
         self.assessed_tick: int | None = None
         self.snapshot: WorldSnapshot | None = None
@@ -51,6 +53,7 @@ class Intelligence:
     def _on_reset(self, _: ResetEvent) -> None:
         self.forecaster.reset()
         self.detector.reset()
+        self.delivery_checker.reset()
         self.anomalies = ()
         self.assessments = ()
         self.assessed_tick = None
@@ -70,6 +73,21 @@ class Intelligence:
         except Exception:  # no anomaly list is better than an old one, and nothing else depends on it
             self.anomalies = ()
             log.exception("anomaly detection failed")
+
+    async def _check_deliveries(self, snap: WorldSnapshot, epoch_id: int) -> None:
+        try:
+            self.delivery_checker.observe(snap)
+            first = self.delivery_checker.history_needed_from()
+            if first is not None:
+                raw = await asyncio.to_thread(self._db.demand_rows, epoch_id, from_tick=first)
+                synced = self._world.synced_through
+                self.delivery_checker.settle((r["station_id"], r["fuel_type"], r["tick"], r["served"]) for r in raw if r["tick"] <= synced)
+        except Exception:  # optional like anomaly detection: no list is better than an old one
+            self.delivery_checker.reset()
+            log.exception("delivery checks failed")
+
+    def delivery_findings(self) -> list[dict[str, object]]:
+        return [asdict(f) for f in self.delivery_checker.findings()]
 
     async def update(self, snap: WorldSnapshot) -> None:
         epoch = self._world.epoch
@@ -93,6 +111,7 @@ class Intelligence:
             log.exception("intelligence update failed")
             return
         self._detect(snap)
+        await self._check_deliveries(snap, epoch.id)
         if self._proposals is None:
             self.failed_stage = None
             return

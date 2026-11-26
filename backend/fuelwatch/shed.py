@@ -32,7 +32,7 @@ _OPERATOR = (
 # What the console loads together on every refresh. It applies the first five only if all of them answer, and it hides
 # the anomaly section when that read fails, which would look like "nothing unusual".
 _ESSENTIAL = frozenset({
-    "/api/status", "/api/snapshot", "/api/risks", "/api/proposals", "/api/alerts", "/api/anomalies",
+    "/api/status", "/api/snapshot", "/api/risks", "/api/proposals", "/api/alerts", "/api/anomalies", "/api/delivery-checks",
     "/api/health/components",  # our own health: needed most when the backend is struggling
 })
 _ONE_PROPOSAL = re.compile(r"/api/proposals/[^/]+")

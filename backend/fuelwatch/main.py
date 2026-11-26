@@ -195,6 +195,11 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
         """Demand anomalies open now (design 6.5), unexplained first."""
         return intel.open_anomalies()
 
+    @app.get("/api/delivery-checks")
+    async def api_delivery_checks() -> list[dict[str, Any]]:
+        """Late supply deliveries and fuel lost on arrival (design 6.5), overdue deliveries first."""
+        return intel.delivery_findings()
+
     @app.get("/api/forecast")
     async def api_forecast(station_id: str | None = None, fuel: str | None = None, ticks: int = 24) -> list[dict[str, Any]]:
         if not 1 <= ticks <= 96:
