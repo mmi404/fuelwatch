@@ -68,12 +68,12 @@ On a wide screen, the left column holds the cover board and the network, and the
 
 | Part | Shows | Source |
 |---|---|---|
-| Summary strip | The worst pair with its countdown, counts by level, likely causes, and the next recommended action with a button to review it | risks, snapshot, proposals |
+| Summary strip | The worst pair with its countdown, counts by level, likely causes, and the next recommended action, marked with when it was planned, with a button to review it | risks, snapshot, proposals |
 | Cover board | All 12 pairs ranked worst first (or grouped by station): status, fuel, stock against capacity, stock sparkline, cover bar, times | risks, observed history |
-| Network | Depots, routes and stations; in-transit shipments; closed routes and depot or station outages; a depot-by-station matrix | snapshot, risks |
+| Network | Depots, routes and stations; in-transit shipments; closed routes and depot or station outages, each listed once together with the event that caused it; a depot-by-station matrix | snapshot, risks |
 | Proposal queue | Open proposals in the D12 card order, with approve and reject; recently closed ones; autopilot state | proposals, status |
 | Alert feed | Open alerts grouped by station and cause, with the number of pairs affected | alerts, snapshot |
-| Pair detail | Observed and projected stock, shipments on the way, demand forecast, the pair's proposal | snapshot, `/api/forecast`, risks, proposals |
+| Pair detail | Observed and projected stock, shipments on the way, demand forecast, the pair's proposal, marked with when it was planned | snapshot, `/api/forecast`, risks, proposals |
 
 **Cover bar.** One axis from 0 to 24 h, shared by every row. The bar runs from the cautious time to the expected time, with a tick at the expected time. An empty tank shows a marker at zero and the word EMPTY. No stockout within the window shows an open arrow at the right edge. A bar whose expected end lies past the window is left open. No forecast shows a hatched bar and "no data".
 
@@ -82,6 +82,8 @@ On a wide screen, the left column holds the cover board and the network, and the
 **Proposal queue.** When several proposals wait, the most urgent one is shown in full and the others are folded to the action, status, expiry, confidence and cover before and after. A folded card has no approve or reject button, and `a` or `r` on it only opens it, so no decision is made with the reasons off screen. A card that has been open stays open when a more urgent one arrives, so buttons do not move out from under the pointer. "Review" in the summary strip goes to the recommended card and opens it.
 
 **Proposal actions.** Without a token, an action asks for it and keeps the operator's place. A refusal appears inside the card: a rejected token (401), a state that has changed (409), an invalid request (422), a missing proposal (404), or a backend that cannot be reached or has writes disabled (503 or network error). Approval sends an upper bound; the backend re-checks fresh state before it sends fuel. When data is stale, approving needs an explicit override that is cleared after use.
+
+**Plan age.** A proposal's reasons and cover figures are the ones from the tick it was planned, and live figures sit beside them. So the open card, the folded card, the summary strip and the pair detail say that these figures are from the plan, with its time, tick and age in simulated time. The console never recalculates them. When the age cannot be known, for example after a simulator reset, it says so.
 
 ### Ledger
 

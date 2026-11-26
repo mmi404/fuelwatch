@@ -1,5 +1,6 @@
 import type { Depot, Level, Risk, Route, SimAllocation, SimEvent, Station, World } from '@/lib/api';
-import { levelRank, pairKey, rankRisks } from '@/lib/risk';
+import { tickClock } from '@/lib/format';
+import { levelRank, pairKey, rankRisks, routeClosed } from '@/lib/risk';
 
 /** Deterministic layered layout: depots left, stations right. Pure functions, no React. */
 
@@ -215,9 +216,79 @@ export function stationViews(world: World, risks: Risk[]): Map<string, StationVi
   return out;
 }
 
-const DONE = /(COMPLET|END|CANCEL|EXPIR|RESOLV)/i;
-export const activeEvents = (events: SimEvent[], tick: number) =>
-  events.filter((e) => !DONE.test(e.status) && (/(ACTIVE|RUNNING|PROGRESS)/i.test(e.status) || (e.start_tick <= tick && tick < e.end_tick)));
+/** Only ACTIVE events: a SCHEDULED one has changed nothing yet, even at its start tick, and a RESOLVED one is over. */
+export const activeEvents = (events: SimEvent[]) => events.filter((e) => e.status === 'ACTIVE');
+
+const andList = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+const idsIn = (e: SimEvent, key: string): string[] => {
+  const v = e.parameters?.[key];
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+};
+
+interface Closable { id: string; name: string; status: string; down: boolean }
+
+/**
+ * One line per physical disruption. An active event and the status it causes (a route, depot or station that is not
+ * available or open) are one line, however many nodes the event covers. A closure that no active event names, and an
+ * active event whose node does not show the change, are each still listed.
+ */
+export function disruptionList(world: World, nameOf: (id: string) => string): string[] {
+  const { tick, tick_minutes: tm, sim_time: simTime } = world.instance;
+  const active = activeEvents(world.events);
+  const until = (e: SimEvent) => `until ${tickClock(simTime, tick, e.end_tick, tm)}`;
+  const eventName = (e: SimEvent) => e.type.replace(/_/g, ' ').toLowerCase();
+
+  // The event types that change a status, the parameter naming what they change, and how a changed node reads.
+  const kinds: { type: string; param: string; nodes: Closable[]; downText: (down: Closable[]) => string }[] = [
+    {
+      type: 'route_disruption',
+      param: 'route_ids',
+      nodes: world.routes.map((r) => ({ id: r.id, name: `${nameOf(r.source_depot_id)} to ${nameOf(r.destination_station_id)}`, status: r.status, down: routeClosed(r.status) })),
+      downText: (d) => `${andList(d.map((n) => n.name))} ${d.length === 1 ? 'route' : 'routes'} closed`,
+    },
+    {
+      type: 'depot_constraint',
+      param: 'depot_ids',
+      nodes: world.depots.map((d) => ({ id: d.id, name: nameOf(d.id), status: d.status, down: d.status !== 'OPEN' })),
+      downText: (d) => d.map((n) => `${n.name} depot ${n.status.toLowerCase()}`).join(', '),
+    },
+    {
+      type: 'station_outage',
+      param: 'station_ids',
+      nodes: world.stations.map((s) => ({ id: s.id, name: nameOf(s.id), status: s.status, down: s.status !== 'OPEN' })),
+      downText: (d) => `${andList(d.map((n) => n.name))} ${d.length === 1 ? 'station outage' : 'stations in outage'}`,
+    },
+  ];
+
+  const out: string[] = [];
+  for (const { type, param, nodes, downText } of kinds) {
+    const listed = new Set<string>();
+    // Events that name their targets go first, then the later end, so a node two events cover shows when the last one ends.
+    const mine = active
+      .filter((e) => e.type === type)
+      .sort((a, b) => Number(!idsIn(a, param).length) - Number(!idsIn(b, param).length) || b.end_tick - a.end_tick || a.id - b.id);
+    for (const e of mine) {
+      const ids = idsIn(e, param);
+      // an event that names nothing accounts for whatever of its kind is down
+      const covered = nodes.filter((n) => (ids.length ? ids.includes(n.id) : n.down));
+      if (!covered.length) {
+        out.push(`${eventName(e)} event ${until(e)}`);
+        continue;
+      }
+      const fresh = covered.filter((n) => !listed.has(n.id));
+      if (!fresh.length) continue;
+      fresh.forEach((n) => listed.add(n.id));
+      const down = fresh.filter((n) => n.down);
+      const unchanged = fresh.filter((n) => !n.down);
+      const still = unchanged.length ? `${andList(unchanged.map((n) => n.name))} (still shown as ${unchanged[0].status.toLowerCase()})` : '';
+      if (!down.length) out.push(`${eventName(e)} ${until(e)} on ${still}`);
+      else out.push(`${downText(down)} ${until(e)}${still ? `, same event also covers ${still}` : ''}`);
+    }
+    for (const n of nodes) if (n.down && !listed.has(n.id)) out.push(downText([n]));
+  }
+  for (const e of active) if (!kinds.some((k) => k.type === e.type)) out.push(`${eventName(e)} event ${until(e)}`);
+  return out;
+}
 
 /** Level that colours an edge: worst at-risk pair that a shipment on the route is heading to, else null (grey). */
 export function edgeLevel(route: Route, ships: Shipment[], risks: Risk[]): Level | null {

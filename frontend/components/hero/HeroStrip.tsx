@@ -7,6 +7,7 @@ import { LEVELS, pairKey, rankRisks } from '@/lib/risk';
 import { useLive } from '@/lib/world';
 import { FuelTag } from '@/components/ui/Fuel';
 import { LevelChip, LevelGlyph, levelLabel } from '@/components/ui/Level';
+import { planMadeAt } from '@/components/proposals/model';
 import { buildCauses } from './causes';
 import s from './HeroStrip.module.css';
 
@@ -264,6 +265,17 @@ export default function HeroStrip() {
             <div className={s.action}>
               <p className={s.headline} title={next.explanation.headline.text}>
                 {next.explanation.headline.text}
+              </p>
+              <p className={s.planAge}>
+                Figures from when the plan was made:{' '}
+                {planMadeAt(next, {
+                  tick: status.tick,
+                  tickMinutes: status.tick_minutes,
+                  epochId: status.epoch?.id ?? null,
+                  simTick: world?.instance.tick ?? status.tick,
+                  simTime: world?.instance.sim_time ?? null,
+                })}
+                .
               </p>
               <div className={s.actionRow}>
                 <span className="mono">{liters(nextLiters)}</span>

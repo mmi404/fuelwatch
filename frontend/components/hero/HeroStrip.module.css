@@ -85,6 +85,7 @@
   font-size: 13px; font-weight: 500;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
+.planAge { font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
 .actionRow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
 .actionRow .mono { font-size: 14px; font-weight: 600; }
 .actionRow button { margin-left: auto; }

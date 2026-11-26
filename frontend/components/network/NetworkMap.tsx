@@ -6,9 +6,9 @@ import { FuelTag } from '@/components/ui/Fuel';
 import { LevelChip, LevelGlyph, levelLabel } from '@/components/ui/Level';
 import { Panel } from '@/components/ui/Panel';
 import { fuelName, liters, plural, tickClock, tickHours } from '@/lib/format';
-import { FUELS, levelRank, rankRisks, routeClosed } from '@/lib/risk';
+import { FUELS, levelRank, rankRisks } from '@/lib/risk';
 import { useLive } from '@/lib/world';
-import { activeEvents, computeLayout, fmtH, outlook, shipmentsInFlight, shortName, stationViews } from './layout';
+import { computeLayout, disruptionList, fmtH, outlook, shipmentsInFlight, shortName, stationViews } from './layout';
 import type { Shipment } from './layout';
 import Matrix from './Matrix';
 import NetworkSvg, { hotSet } from './NetworkSvg';
@@ -82,13 +82,7 @@ function Network({
     return node ? shortName(node.name) : id;
   };
 
-  const closed = world.routes.filter((r) => routeClosed(r.status));
-  const disruptions = [
-    ...closed.map((r) => `${nameOf(r.source_depot_id)} to ${nameOf(r.destination_station_id)} route closed`),
-    ...world.depots.filter((d) => d.status !== 'OPEN').map((d) => `${nameOf(d.id)} depot outage`),
-    ...world.stations.filter((s) => s.status !== 'OPEN').map((s) => `${nameOf(s.id)} station outage`),
-    ...activeEvents(world.events, tick).map((e) => `${e.type.replace(/_/g, ' ').toLowerCase()} event until ${tickClock(simTime, tick, e.end_tick, tm)}`),
-  ];
+  const disruptions = disruptionList(world, nameOf);
 
   const worst = rankRisks(risks)[0];
   const summary = [

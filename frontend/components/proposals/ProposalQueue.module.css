@@ -40,6 +40,8 @@
 /* the open part of a waiting card keeps the card's own spacing */
 .body { display: grid; gap: 10px; }
 .brief { font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+/* says that the figures beside it are older than the live ones */
+.planAge { font-size: 12px; line-height: 1.5; color: var(--ink-2); padding-left: 8px; border-left: 2px solid var(--rule-strong); overflow-wrap: anywhere; }
 
 .facts { display: grid; gap: 8px; }
 .factLineTitle { margin-bottom: 2px; }

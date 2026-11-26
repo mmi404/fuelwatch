@@ -3,7 +3,7 @@
 
 import { ApiError } from '@/lib/api';
 import type { Level, Proposal } from '@/lib/api';
-import { fuelName, hours, liters, pct, pretty } from '@/lib/format';
+import { age, fuelName, hours, liters, pct, plural, pretty, tickClock } from '@/lib/format';
 
 type Rec = Record<string, unknown>;
 const rec = (v: unknown): Rec => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Rec) : {});
@@ -148,6 +148,34 @@ export function readCard(p: Proposal): CardView {
     confidence: { score, level: word, reasons },
     fallback,
   };
+}
+
+/** What a plan-time note needs from the live data. A null means the live data does not say. */
+export interface PlanNow {
+  tick: number | null;
+  tickMinutes: number | null;
+  epochId: number | null;
+  /** The snapshot's clock: `simTime` is the time at `simTick`. */
+  simTick: number;
+  simTime: string | null;
+}
+
+/**
+ * Completes "figures from when the plan was made: ". The card's figures are never recalculated, so this says when they
+ * were taken and how old that is in simulated time. When the live data cannot give the age, it says so instead.
+ */
+export function planMadeAt(p: Pick<Proposal, 'snapshot_tick' | 'epoch_id'>, now: PlanNow): string {
+  const made = p.snapshot_tick;
+  const unknown = (why: string) => `tick ${made}. Their age is unknown: ${why}`;
+  if (p.epoch_id != null && now.epochId != null && p.epoch_id !== now.epochId) return unknown('the plan and the live data are from different simulator runs');
+  if (now.tick == null) return unknown('the live tick is not known');
+  if (made > now.tick) return unknown(`the live data is at tick ${now.tick}, earlier than the plan`);
+  const tm = now.tickMinutes;
+  const clock = now.simTime && tm ? tickClock(now.simTime, now.simTick, made, tm) : null;
+  const when = clock && clock !== `tick ${made}` ? `${clock} (tick ${made})` : `tick ${made}`;
+  const ticks = now.tick - made;
+  if (ticks === 0) return `${when}, the current tick`;
+  return `${when}, ${tm ? age(ticks * tm * 60) : plural(ticks, 'tick')} ago in simulated time`;
 }
 
 /** "Send 12,000 L diesel from Gazipur to Tongi". Several depots: "Send 5,000 L diesel to Tongi: 3,000 L from Gazipur, 2,000 L from Patiya". */

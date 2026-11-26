@@ -83,7 +83,7 @@ If ignored   Cover is 3.0 h at high demand. Sending lifts it to 6.5 h and avoids
              3,238 L of unmet demand over the next 12 h
 ```
 
-The card keeps the figures from the moment it was planned; the cover board shows the current ones.
+The card keeps the figures from the moment it was planned and says when that was and how old they are in simulated time; the cover board shows the current ones.
 
 ## Architecture
 

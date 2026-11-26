@@ -18,6 +18,7 @@ import {
   failureText,
   isOpen,
   lineState,
+  planMadeAt,
 } from './model';
 import s from './ProposalQueue.module.css';
 
@@ -30,6 +31,7 @@ export interface Ctx {
   simTick: number;
   simTime: string | null;
   mode: Status['mode'];
+  epochId: number | null;
   gateOpen: boolean;
   hasToken: boolean;
   routes: Record<string, Route>;
@@ -316,15 +318,20 @@ export function ProposalCard(props: CardProps) {
       {variant === 'active' && <Outcome p={p} v={v} ctx={ctx} fresh={decided === 'approve'} />}
 
       {variant === 'open' && collapsed && (
-        <p className={s.brief}>
-          {conf.level} confidence.
-          {hasEffect && ` Cover at high demand (P90): ${cover(v.effect.before ?? v.hoursP90)}; if sent: ${cover(v.effect.after)}.`}
-        </p>
+        <>
+          <p className={s.planAge}>Figures from when the plan was made: {planMadeAt(p, ctx)}.</p>
+          <p className={s.brief}>
+            {conf.level} confidence.
+            {hasEffect && ` Cover at high demand (P90): ${cover(v.effect.before ?? v.hoursP90)}; if sent: ${cover(v.effect.after)}.`}
+          </p>
+        </>
       )}
 
       {variant === 'open' && !collapsed && (
         <div id={bodyId} className={s.body}>
           <Facts p={p} v={v} ctx={ctx} open />
+
+          <p className={s.planAge}>Confidence, Why, If ignored and Other options use figures from when the plan was made: {planMadeAt(p, ctx)}.</p>
 
           <div className={s.rows}>
             <div className="label">Confidence</div>

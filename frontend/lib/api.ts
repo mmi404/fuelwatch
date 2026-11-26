@@ -72,6 +72,8 @@ export interface LedgerLine {
 export interface Line { id: number; depot_id: string; route_id: string; fuel_type: string; proposed_quantity: number; executed_quantity: number | null; status: string; failure_code: string | null }
 export interface Proposal {
   id: number;
+  /** The simulator run the plan belongs to, to compare with `Status.epoch`: ticks restart with each run. */
+  epoch_id?: number;
   station_id: string;
   fuel_type: string;
   status: string;

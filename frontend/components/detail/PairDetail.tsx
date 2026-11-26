@@ -7,6 +7,7 @@ import type { Proposal, Risk } from '@/lib/api';
 import { age, fuelName, hours, int, liters, pct, pretty, tickClock } from '@/lib/format';
 import { routeClosed, splitKey } from '@/lib/risk';
 import { useLive } from '@/lib/world';
+import { planMadeAt } from '@/components/proposals/model';
 import { COVER_TICKS, FUTURE_TICKS, Inbound, inboundFor, project } from './model';
 import StockChart, { CHART_HEIGHT, MIN_OBSERVED } from './StockChart';
 import { useForecast } from './useForecast';
@@ -259,6 +260,17 @@ function Sheet({ pair }: { pair: string }) {
                 {open.map((p) => (
                   <li key={p.id} className={css.why}>
                     <p>{p.explanation.headline.text}</p>
+                    <p className={css.planAge}>
+                      This sentence and the cover below are from when the plan was made:{' '}
+                      {planMadeAt(p, {
+                        tick: status?.tick ?? null,
+                        tickMinutes: status?.tick_minutes ?? null,
+                        epochId: status?.epoch?.id ?? null,
+                        simTick: nowTick ?? status?.tick ?? 0,
+                        simTime,
+                      })}
+                      .
+                    </p>
                     <p className={css.effect}>
                       <span className="muted">Cautious cover if dispatched</span>
                       <span className="mono">{cover(p.explanation.effect.hours_p90_before)} to {cover(p.explanation.effect.hours_p90_after)}</span>

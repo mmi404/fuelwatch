@@ -81,6 +81,7 @@ export default function ProposalQueue() {
       simTick: snapshot?.world.instance.tick ?? status.tick,
       simTime: snapshot?.world.instance.sim_time ?? null,
       mode: status.mode,
+      epochId: status.epoch?.id ?? null,
       gateOpen: status.execution?.gate_open ?? true,
       hasToken: token !== '',
       routes,
