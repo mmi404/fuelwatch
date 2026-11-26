@@ -7,7 +7,8 @@ import { ACTORS, actorWord, auditParts, describeAudit } from './model';
 import type { AuditState } from './useLedger';
 import s from './Ledger.module.css';
 
-const actorGlyph = (actor: string) => (actor === 'autopilot' ? '◆' : actor === 'operator' ? '●' : '○');
+/** Anyone but the autopilot and the system is a person: "operator" with the shared token, else their own name. */
+const actorGlyph = (actor: string) => (actor === 'autopilot' ? '◆' : actor === 'system' ? '○' : '●');
 
 /** Typewriter report: one mono line per recorded action, newest first. Every string comes from the API as text. */
 export default function AuditTrail({ state, refresh }: { state: AuditState; refresh: () => void }) {

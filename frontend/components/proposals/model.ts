@@ -288,6 +288,7 @@ export interface WriteError { headline: string; detail: string }
 export function describeError(e: unknown, tick: number | null): WriteError {
   if (e instanceof ApiError) {
     if (e.status === 401) return { headline: 'Token rejected. Check it and retry.', detail: '' };
+    if (e.status === 403) return { headline: 'Not applied: your account may not do this.', detail: e.message };
     if (e.status === 503) return { headline: 'Writes are disabled until the server has an operator token.', detail: '' };
     if (e.status === 404 || e.status === 409 || e.status === 422) return { headline: `State changed${tick != null ? ` (tick ${tick})` : ''}. Review the latest and retry.`, detail: e.message };
     return { headline: `Not applied (HTTP ${e.status}). Retry.`, detail: e.message };

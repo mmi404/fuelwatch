@@ -8,6 +8,7 @@ export function describeError(e: unknown): string {
   if (!(e instanceof ApiError)) return `No answer from the console. ${UNSURE}`;
   const detail = e.message ? ` (${e.message})` : '';
   if (e.status === 401) return 'The operator token is missing or wrong, so nothing was changed. Enter it again and retry.';
+  if (e.status === 403) return `Your account may not do this, so nothing was changed.${detail}`;
   if (e.status === 422) return `The server refused the values, so nothing was changed.${detail}`;
   if (e.status === 503 && e.message.startsWith('OPERATOR_TOKEN_NOT_SET')) {
     return 'The server has no operator token configured, so every control is switched off there. Nothing was changed.';

@@ -24,7 +24,7 @@ const GO: Record<string, string> = Object.fromEntries(PAGES.map((p) => [p.key, p
 /** Application shell: title-block top bar, banner, content, quiet footer line, dialogs and the live region. */
 export function Shell({ children }: { children: React.ReactNode }) {
   const live = useLive();
-  const { token, ask } = useOperator();
+  const { token, me, ask } = useOperator();
   const pathname = usePathname();
   const router = useRouter();
   const now = useNow();
@@ -123,6 +123,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const clock = live.snapshot ? simClock(live.snapshot.world.instance.sim_time) : '--';
   const tickNo = live.status?.tick ?? live.snapshot?.world.instance.tick;
   const hasToken = token !== '';
+  // With the shared token the server answers "operator", which is no one in particular: keep saying "Token set".
+  const named = me && me.name !== 'operator' ? me : null;
   const showBanner = !!live.error && health.hasData;
   const active = (href: string) => (href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`));
 
@@ -175,8 +177,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <button type="button" className={`${s.cell} ${s.btnCell} ${s.hideSmall}`} onClick={openToken} title="Operator token: stored in this browser only">
           <IconKey set={hasToken} />
           <span className={s.stack}>
-            <span className={s.cap}>Operator</span>
-            <span className={s.val}>{hasToken ? 'Token set' : 'No token'}</span>
+            <span className={s.cap}>{named ? named.role : 'Operator'}</span>
+            <span className={s.val}>{named ? named.name : hasToken ? 'Token set' : 'No token'}</span>
           </span>
         </button>
         <button type="button" className={`${s.cell} ${s.btnCell} ${s.lastCell}`} onClick={openPalette} aria-label="Open command palette" title="Command palette (Ctrl or Cmd K)">

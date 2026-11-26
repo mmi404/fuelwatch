@@ -3,10 +3,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { ApiError, send } from './api';
 
+/** GET /api/me: whose key is held. */
+export interface Me { name: string; role: 'operator' | 'supervisor' }
+
 interface Operator {
   /** The shared secret sent as X-Operator-Token. Empty until the operator enters it (or the build supplied a default). */
   token: string;
   setToken: (t: string) => void;
+  /** Null until the server has recognised the key. */
+  me: Me | null;
   /** Whether the token dialog is open (the shell renders it). */
   askOpen: boolean;
   ask: (open: boolean) => void;
@@ -26,6 +31,23 @@ export const useOperator = (): Operator => {
 export function OperatorProvider({ children }: { children: React.ReactNode }) {
   const [token, setTokenState] = useState('');
   const [askOpen, ask] = useState(false);
+  const [me, setMe] = useState<Me | null>(null);
+
+  // Only for showing who is signed in: the server checks the key and its role again on every write.
+  useEffect(() => {
+    setMe(null);
+    if (!token) return;
+    let stale = false;
+    fetch('/api/me', { cache: 'no-store', headers: { 'X-Operator-Token': token } })
+      .then((r) => (r.ok ? (r.json() as Promise<Me>) : null))
+      .then((found) => {
+        if (!stale) setMe(found);
+      })
+      .catch(() => undefined); // a key that is not a valid header value, or no answer: show no name
+    return () => {
+      stale = true;
+    };
+  }, [token]);
 
   useEffect(() => {
     try {
@@ -56,6 +78,6 @@ export function OperatorProvider({ children }: { children: React.ReactNode }) {
     [token],
   );
 
-  const value = useMemo(() => ({ token, setToken, askOpen, ask, write }), [token, setToken, askOpen, write]);
+  const value = useMemo(() => ({ token, setToken, me, askOpen, ask, write }), [token, setToken, me, askOpen, write]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

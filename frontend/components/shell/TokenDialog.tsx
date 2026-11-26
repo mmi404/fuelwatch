@@ -45,7 +45,7 @@ export function TokenDialog({ manualOpen }: { manualOpen: React.MutableRefObject
           <span className={s.modalMeta}>{token ? 'Token set' : 'No token'}</span>
         </header>
         <div className={s.modalBody}>
-          <p id={hintId} className={s.plain}>The token is stored in this browser only and is sent with actions that change the simulator.</p>
+          <p id={hintId} className={s.plain}>Use the shared operator token, or your personal key if this system gives each operator one. It is stored in this browser only and is sent with actions that change the simulator.</p>
           <label className={s.fieldLabel} htmlFor={`${titleId}-field`}>Token</label>
           <input
             id={`${titleId}-field`}
