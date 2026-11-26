@@ -72,3 +72,13 @@ groups:
         annotations:
           summary: The shipment ledger failed to read or write in the last five minutes
           description: The record of what was sent may be incomplete. Check the backend log and disk.
+
+      # No "for": the detector already asks for 2 of the last 3 ticks, and at a fast simulation speed an anomaly
+      # can open and close within seconds. An explained anomaly is expected and does not alert.
+      - alert: FuelWatchUnexplainedDemand
+        expr: fuelwatch_anomalies_open{kind="unexplained"} > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Demand at a station departs from the forecast with no known cause
+          description: Check the console's alert feed for the station. Its new proposals carry lower confidence.

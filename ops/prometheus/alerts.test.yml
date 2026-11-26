@@ -24,6 +24,10 @@ tests:
         values: '0.79x120'
       - series: 'fuelwatch_snapshot_tick'
         values: '200x120'
+      - series: 'fuelwatch_anomalies_open{kind="unexplained"}'
+        values: '0x120'
+      - series: 'fuelwatch_anomalies_open{kind="explained"}'
+        values: '1x120'
     alert_rule_test:
       - { eval_time: 9m, alertname: FuelWatchBackendDown, exp_alerts: [] }
       - { eval_time: 9m, alertname: FuelWatchBreakerNotClosed, exp_alerts: [] }
@@ -32,6 +36,7 @@ tests:
       - { eval_time: 9m, alertname: FuelWatchTickStreamStalled, exp_alerts: [] }
       - { eval_time: 9m, alertname: FuelWatchForecastCoverageOff, exp_alerts: [] }
       - { eval_time: 9m, alertname: FuelWatchLedgerErrors, exp_alerts: [] }
+      - { eval_time: 9m, alertname: FuelWatchUnexplainedDemand, exp_alerts: [] }
 
   # An outage: the breaker flips between open (2) and half-open (1), then closes again.
   - name: outage and recovery
@@ -134,3 +139,19 @@ tests:
             exp_annotations:
               summary: The forecast's 80% interval is holding a share outside 70% to 90%
               description: The uncertainty bands are off, so read the cautious stockout times with care.
+
+  - name: an unexplained anomaly opens and closes
+    interval: 5s
+    input_series:
+      - series: 'fuelwatch_anomalies_open{kind="unexplained"}'
+        values: '0 0 0 1 1 1 1 0 0 0'
+    alert_rule_test:
+      - { eval_time: 10s, alertname: FuelWatchUnexplainedDemand, exp_alerts: [] }
+      - eval_time: 20s
+        alertname: FuelWatchUnexplainedDemand
+        exp_alerts:
+          - exp_labels: { severity: warning, kind: unexplained }
+            exp_annotations:
+              summary: Demand at a station departs from the forecast with no known cause
+              description: Check the console's alert feed for the station. Its new proposals carry lower confidence.
+      - { eval_time: 40s, alertname: FuelWatchUnexplainedDemand, exp_alerts: [] }
