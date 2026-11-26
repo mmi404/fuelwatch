@@ -181,3 +181,19 @@ tests:
               summary: Demand at a station departs from the forecast with no known cause
               description: Check the console's alert feed for the station. Its new proposals carry lower confidence.
       - { eval_time: 40s, alertname: FuelWatchUnexplainedDemand, exp_alerts: [] }
+
+  - name: the first invalid response fires and later clears
+    interval: 5s
+    input_series:
+      - series: 'fuelwatch_invalid_payloads_total{endpoint="/v1/stations"}'
+        values: '_x24 1x180'
+    alert_rule_test:
+      - { eval_time: 1m, alertname: FuelWatchInvalidResponse, exp_alerts: [] }
+      - eval_time: 3m
+        alertname: FuelWatchInvalidResponse
+        exp_alerts:
+          - exp_labels: { severity: warning, endpoint: /v1/stations }
+            exp_annotations:
+              summary: A response from the simulator was rejected as invalid (/v1/stations)
+              description: The data was not used and the last good snapshot is kept. The backend log names the field.
+      - { eval_time: 12m, alertname: FuelWatchInvalidResponse, exp_alerts: [] }

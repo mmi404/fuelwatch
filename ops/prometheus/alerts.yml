@@ -93,3 +93,15 @@ groups:
         annotations:
           summary: The backend refused requests in the last five minutes because of load ({{ $labels.priority }})
           description: Health checks and operator actions are still served. Check the request rate and our API latency.
+
+      # A rejected payload is never used: the last good snapshot stays. The first half of the expression catches the
+      # first rejection from an endpoint, which creates its series.
+      - alert: FuelWatchInvalidResponse
+        expr: >-
+          (fuelwatch_invalid_payloads_total > 0 unless fuelwatch_invalid_payloads_total offset 5m)
+          or increase(fuelwatch_invalid_payloads_total[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: A response from the simulator was rejected as invalid ({{ $labels.endpoint }})
+          description: The data was not used and the last good snapshot is kept. The backend log names the field.
