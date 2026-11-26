@@ -211,6 +211,15 @@ python ops/demo/drill.py clear
 
 The console is LIVE again within seconds and the held shipment is sent on its own.
 
+**More failure drills.** Each simulator fault has its own command. A fault lasts 60 seconds, or the number of seconds given after its name. `python ops/demo/drill.py watch` prints the health mode, data age, breakers and retry count every second, which is a handy second window during a drill. Results of a 25 second run of each on one laptop, with the simulator running:
+
+| Command | What FuelWatch did |
+|---|---|
+| `drill.py latency` (1.5 s per answer) | LIVE, then DEGRADED, then STALE as full reads stopped finishing in time (data up to 19 s old). Its own API still answered from the cache in under 50 ms |
+| `drill.py errors` (about 1 request in 4 fails) | LIVE for 17 of 18 checks and DEGRADED for one; 66 retries; the breaker stayed closed |
+| `drill.py stale` | DEGRADED for as long as the fault lasted |
+| `drill.py stream` | No visible change: the fault refuses only new stream connections, and polling does not depend on the stream |
+
 **4. Proof.** Show the **Results** page and the Grafana dashboard: health mode, breakers, retries, simulator latency and hours to stockout.
 
 ## Reproduce the measurements
