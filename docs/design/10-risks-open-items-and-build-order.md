@@ -14,7 +14,7 @@ How much of this design exists is stated in the project README, which is the one
 | NFR-4 Recovery within 10 s | Measured on one laptop: live again 2.7 to 3.7 s after clearing outages of 16, 40 and 55 s (up to 23.7 s before the breaker's cool-down was capped at 5 s) |
 | NFR-5 Zero duplicates and avoidable losses | No duplicate and no failed shipment among the 18 of that run, and no rejected send in the replay benchmark; the forced-timeout drill (D12) was not run |
 | NFR-6 Honest degraded state | Checked by the drill checklist |
-| NFR-7 Start in under 5 minutes | Not measured |
+| NFR-7 Start in under 5 minutes | Measured on one laptop with the base images already downloaded, so not a true first run: building both images with no cache took 221 s, and a fresh clone from GitHub with the quick-start command took 331 s while other work ran on the laptop, which is over the target. A first download of the base images was not timed |
 | NFR-8 Reproducible benchmark | The simulator's determinism is verified (identical state hashes across two runs); the benchmark itself is not run |
 | NFR-9 Bounded series count | 379 series after that run, 6 more than a minute earlier as new outcomes first appeared; a long run was not done. A unit test checks that labels come from fixed sets |
 
