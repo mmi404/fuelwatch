@@ -104,7 +104,7 @@ Service level, the simulator's own metric. No run had a rejected POST, a failed 
 | Malformed fields | Rejects the payload, alerts, keeps the last good snapshot |
 | Simulator reset mid-run | Detects the tick going backwards, starts a new world epoch, expires stale proposals |
 | Forecaster or optimizer down | Falls back down a documented chain; the fallback is counted and visible |
-| Traffic surge | Rate-limited API, bounded queues, cache-served reads |
+| Traffic surge | Reads come from the in-memory snapshot; past about 200 requests per second the poller starves and the mode turns STALE until load drops (measured; no load shedding yet) |
 
 ## Observability
 
@@ -114,13 +114,15 @@ Prometheus metrics for simulator calls, snapshot age, breaker state, allocation 
 
 k6 open-model tests (`constant-arrival-rate`, then `ramping-arrival-rate` to find the knee), aimed at FuelWatch, never at the simulator, and repeated under an injected latency fault.
 
-<!-- TODO: fill from loadtest/ report. -->
+Measured on one laptop with every service on the same machine (Docker Desktop, 16 logical cores, a single backend process), so read the numbers as relative. Raw k6 summaries and the conditions are in [loadtest/results/20261126](loadtest/results/20261126).
 
 | Scenario | Rate | p50 | p95 | p99 | Errors |
 |---|---|---|---|---|---|
-| Dashboard reads | TBD | TBD | TBD | TBD | TBD |
-| Proposal generation | TBD | TBD | TBD | TBD | TBD |
-| Dashboard reads, +latency fault | TBD | TBD | TBD | TBD | TBD |
+| Dashboard reads (status, risks, proposals, alerts) | 200 requests/s for 60 s | 14.6 ms | 170.5 ms | 292.4 ms | 0 of 12,004 |
+| Plan endpoints (proposals, allocations, forecast) | 150 requests/s for 60 s | 14.0 ms | 162.4 ms | 270.5 ms | 0 of 9,000 |
+| Dashboard reads, simulator 1 s latency fault active | 200 requests/s for 60 s | 13.9 ms | 75.8 ms | 155.0 ms | 0 of 12,004 |
+
+The reads are served from the in-memory snapshot, so a slow simulator does not slow them. The ramp test shows the limit: this process keeps up to about 50 dashboard refreshes per second (200 requests per second). Beyond that, arrivals queue, latency climbs to seconds and, at the top of the ramp (up to 1,000 refreshes per second), the backend's own poller could not finish a world read inside its 5 second deadline: the mode went to STALE and the read breaker opened 5 times. It returned to LIVE about 20 seconds after the load ended. There is no load shedding or rate limit in front of the API yet, and the poller shares the event loop with the request handlers; both are known limits.
 
 ## Quick start
 

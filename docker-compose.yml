@@ -1,0 +1,85 @@
+# FuelWatch stack. `docker compose up -d --build` starts the simulator, the backend, Prometheus and Grafana.
+# Profiles: `bench` adds a second simulator on :8001 for the replay benchmark, `loadtest` runs k6.
+# Host ports can be moved with the *_PORT variables in .env (useful when something else already uses 8000).
+
+services:
+  simulator:
+    image: asifmahmoud414/bup-fuel-supply-simulator:1.0.0
+    environment:
+      SIMULATION_SPEED: ${SIMULATION_SPEED:-8}
+      TICK_MINUTES: ${TICK_MINUTES:-15}
+      SIMULATOR_START_MODE: ${SIMULATOR_START_MODE:-paused}
+    ports:
+      - "${SIMULATOR_PORT:-8000}:8000"
+
+  simulator-bench:
+    profiles: ["bench"]
+    image: asifmahmoud414/bup-fuel-supply-simulator:1.0.0
+    environment:
+      SIMULATION_SPEED: ${SIMULATION_SPEED:-8}
+      TICK_MINUTES: ${TICK_MINUTES:-15}
+      SIMULATOR_START_MODE: paused
+    ports:
+      - "${BENCH_SIMULATOR_PORT:-8001}:8000"
+
+  backend:
+    build: ./backend
+    environment:
+      SIMULATOR_URL: http://simulator:8000
+      OPERATOR_TOKEN: ${OPERATOR_TOKEN:-demo-token}
+      ALLOCATOR: ${ALLOCATOR:-lp}
+      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-3}
+      POLL_INTERVAL: ${POLL_INTERVAL:-0.5}
+      REFRESH_MAX_AGE: ${REFRESH_MAX_AGE:-5}
+      READY_MAX_AGE: ${READY_MAX_AGE:-15}
+    volumes:
+      - backend-data:/data
+    depends_on:
+      - simulator
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=2d"]
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      - backend
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+
+  k6:
+    profiles: ["loadtest"]
+    image: grafana/k6:0.54.0
+    environment:
+      TARGET: http://backend:8080
+    volumes:
+      - ./loadtest:/scripts:ro
+    entrypoint: ["k6"]
+    command: ["run", "/scripts/dashboard.js"]
+    depends_on:
+      - backend
+
+volumes:
+  backend-data:
+  prometheus-data:
+  grafana-data:
