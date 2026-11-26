@@ -22,6 +22,7 @@ Two interfaces matter: the one FuelWatch **exposes** to its dashboard and to ope
 |---|---|---|---|---|
 | GET | `/livez` | The process is up | `200 {"status":"ok"}` | no |
 | GET | `/readyz` | A recent snapshot exists | `200 {"ready":true, ...meta}` or `503 {"ready":false,"reason":...}` | no |
+| GET | `/api/health/components` | Health of FuelWatch itself, read when asked: backend API, database (a real SQLite read), fuel simulator, forecast, decision engine, tick stream and execution gate, each `HEALTHY`, `DEGRADED`, `DOWN` or `UNKNOWN` with a plain detail, and an `overall` state. `http` has our p95 latency (estimated from histogram buckets) and 5xx share over `window`: `recent` (about 5 minutes or more, measured between calls) or `since_start`; both are null without requests. `process` has resident memory (null without `/proc`) and CPU. Like other optional reads it can be refused under load | `200 {overall, checked_at, components, http, process}` | no |
 | GET | `/api/snapshot` | The whole current world | `200 {"meta", "world"}`, or `503` with code `NO_SNAPSHOT` before the first read | no |
 | GET | `/api/status` | Mode, tick and age, epoch and resets, breaker states, retry budget, history and forecast health, tick-stream state, execution counters and whether the gate is open, autopilot settings, proposals by status, open alerts, versions | `200` | no |
 | GET | `/api/risks` | One row per station and fuel: hours to stockout P50 and P90, risk, level, ordered by urgency | `200 [..]` | no |
