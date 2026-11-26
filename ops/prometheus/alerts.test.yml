@@ -37,6 +37,32 @@ tests:
       - { eval_time: 9m, alertname: FuelWatchForecastCoverageOff, exp_alerts: [] }
       - { eval_time: 9m, alertname: FuelWatchLedgerErrors, exp_alerts: [] }
       - { eval_time: 9m, alertname: FuelWatchUnexplainedDemand, exp_alerts: [] }
+      - { eval_time: 9m, alertname: FuelWatchSheddingLoad, exp_alerts: [] }
+
+  # Like the fallback counter, a class's series appears with its first refusal. Later refusals keep the alert on.
+  - name: first shed request, then more
+    interval: 5s
+    input_series:
+      - series: 'fuelwatch_requests_shed_total{priority="optional"}'
+        values: '_x24 1x120 40x120'
+    alert_rule_test:
+      - { eval_time: 1m, alertname: FuelWatchSheddingLoad, exp_alerts: [] }
+      - eval_time: 3m
+        alertname: FuelWatchSheddingLoad
+        exp_alerts:
+          - exp_labels: { severity: warning, priority: optional }
+            exp_annotations:
+              summary: The backend refused requests in the last five minutes because of load (optional)
+              description: Health checks and operator actions are still served. Check the request rate and our API latency.
+      - { eval_time: 10m, alertname: FuelWatchSheddingLoad, exp_alerts: [] }
+      - eval_time: 13m
+        alertname: FuelWatchSheddingLoad
+        exp_alerts:
+          - exp_labels: { severity: warning, priority: optional }
+            exp_annotations:
+              summary: The backend refused requests in the last five minutes because of load (optional)
+              description: Health checks and operator actions are still served. Check the request rate and our API latency.
+      - { eval_time: 19m, alertname: FuelWatchSheddingLoad, exp_alerts: [] }
 
   # An outage: the breaker flips between open (2) and half-open (1), then closes again.
   - name: outage and recovery

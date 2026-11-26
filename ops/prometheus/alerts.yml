@@ -82,3 +82,14 @@ groups:
         annotations:
           summary: Demand at a station departs from the forecast with no known cause
           description: Check the console's alert feed for the station. Its new proposals carry lower confidence.
+
+      # Like the fallback rule, the first half catches the first refusal of a class, which creates its series.
+      - alert: FuelWatchSheddingLoad
+        expr: >-
+          (fuelwatch_requests_shed_total > 0 unless fuelwatch_requests_shed_total offset 5m)
+          or increase(fuelwatch_requests_shed_total[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: The backend refused requests in the last five minutes because of load ({{ $labels.priority }})
+          description: Health checks and operator actions are still served. Check the request rate and our API latency.
