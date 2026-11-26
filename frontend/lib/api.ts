@@ -100,6 +100,9 @@ export interface Alert { id: number; station_id: string; fuel_type: string; leve
 /** An open demand anomaly for one station, all fuels together. `summary` is the backend's plain-words account. */
 export interface Anomaly { station_id: string; station_name: string; kind: 'explained' | 'unexplained'; direction: 'above' | 'below'; first_tick: number; last_tick: number; summary: string }
 
+/** A late supply delivery or fuel lost on arrival. `summary` is the backend's plain-words account. */
+export interface DeliveryFinding { id: string; kind: 'late_delivery' | 'lost_fuel'; state: 'overdue' | 'arrived_late' | 'lost'; place_name: string; last_tick: number; summary: string }
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);

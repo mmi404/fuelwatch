@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Anomaly, Proposal, Risk, Snapshot, Status, get } from './api';
+import { Alert, Anomaly, DeliveryFinding, Proposal, Risk, Snapshot, Status, get } from './api';
 import { pairKey } from './risk';
 
 export interface StockPoint { tick: number; inventory: number }
@@ -13,6 +13,8 @@ export interface Live {
   alerts: Alert[];
   /** Open demand anomalies. Empty when there are none, and also when they could not be read: only their section hides. */
   anomalies: Anomaly[];
+  /** Open late-delivery and lost-fuel findings. Empty also when they could not be read, like `anomalies`. */
+  deliveryChecks: DeliveryFinding[];
   snapshot: Snapshot | null;
   /** Message of the last failed refresh, cleared by the next good one. Data on screen is kept when this is set. */
   error: string | null;
@@ -45,6 +47,7 @@ const HISTORY_TICKS = 192;
 export function WorldProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<Pick<Live, 'status' | 'risks' | 'proposals' | 'alerts' | 'snapshot'>>({ status: null, risks: [], proposals: [], alerts: [], snapshot: null });
   const [anomalies, setAnomalies] = useState<Anomaly[]>([]);
+  const [deliveryChecks, setDeliveryChecks] = useState<DeliveryFinding[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [lastOkAt, setLastOkAt] = useState<number | null>(null);
   const [streaming, setStreaming] = useState(false);
@@ -64,6 +67,9 @@ export function WorldProvider({ children }: { children: React.ReactNode }) {
     get<Anomaly[]>('/anomalies')
       .then((a) => setAnomalies(Array.isArray(a) ? a : []))
       .catch(() => setAnomalies([]));
+    get<DeliveryFinding[]>('/delivery-checks')
+      .then((d) => setDeliveryChecks(Array.isArray(d) ? d : []))
+      .catch(() => setDeliveryChecks([]));
     try {
       const [status, risks, proposals, alerts, snapshot] = await Promise.all([
         get<Status>('/status'),
@@ -123,8 +129,8 @@ export function WorldProvider({ children }: { children: React.ReactNode }) {
   }, [refresh]);
 
   const value = useMemo<Live>(
-    () => ({ ...data, anomalies, error, lastOkAt, streaming, history, selected, select, refresh: () => void refresh() }),
-    [data, anomalies, error, lastOkAt, streaming, history, selected, refresh],
+    () => ({ ...data, anomalies, deliveryChecks, error, lastOkAt, streaming, history, selected, select, refresh: () => void refresh() }),
+    [data, anomalies, deliveryChecks, error, lastOkAt, streaming, history, selected, refresh],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
