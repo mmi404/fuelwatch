@@ -97,6 +97,9 @@ export interface Proposal {
 
 export interface Alert { id: number; station_id: string; fuel_type: string; level: Level; hours_p90: number | null; state: string; first_tick: number }
 
+/** An open demand anomaly for one station, all fuels together. `summary` is the backend's plain-words account. */
+export interface Anomaly { station_id: string; station_name: string; kind: 'explained' | 'unexplained'; direction: 'above' | 'below'; first_tick: number; last_tick: number; summary: string }
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);

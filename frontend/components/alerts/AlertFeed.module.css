@@ -44,6 +44,20 @@
 
 .side { padding: 6px var(--pad) 0 4px; }
 
+.anomaly {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 8px var(--pad);
+  border-bottom: 1px solid var(--rule);
+}
+.anomalyGlyph { margin-top: 2px; color: var(--ink); }
+.anomalyBody { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.anomalyHead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 8px; }
+.anomalyName { min-width: 0; font-weight: 600; }
+.anomalyText { font-size: 12px; line-height: 1.4; color: var(--ink-2); }
+
 .foot {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
   min-height: var(--row); padding: 6px var(--pad);

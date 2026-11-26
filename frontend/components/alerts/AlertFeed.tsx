@@ -8,6 +8,7 @@ import { Panel } from '@/components/ui/Panel';
 import { fuelName, plural, pretty } from '@/lib/format';
 import { pairKey } from '@/lib/risk';
 import { useLive } from '@/lib/world';
+import Anomalies from './Anomalies';
 import { Cause, StationEntry, buildCauses, buildStations, leftText, openAlerts, openFor } from './model';
 import css from './AlertFeed.module.css';
 
@@ -137,6 +138,7 @@ export default function AlertFeed() {
   return (
     <div data-stale={stale ? 'true' : undefined}>
       <Panel title="Open alerts" meta={meta} flush>
+        <Anomalies />
         {loading && <Skeleton />}
         {failed && (
           <div className={css.empty}>

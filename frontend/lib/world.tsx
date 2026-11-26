@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Proposal, Risk, Snapshot, Status, get } from './api';
+import { Alert, Anomaly, Proposal, Risk, Snapshot, Status, get } from './api';
 import { pairKey } from './risk';
 
 export interface StockPoint { tick: number; inventory: number }
@@ -11,6 +11,8 @@ export interface Live {
   risks: Risk[];
   proposals: Proposal[];
   alerts: Alert[];
+  /** Open demand anomalies. Empty when there are none, and also when they could not be read: only their section hides. */
+  anomalies: Anomaly[];
   snapshot: Snapshot | null;
   /** Message of the last failed refresh, cleared by the next good one. Data on screen is kept when this is set. */
   error: string | null;
@@ -42,6 +44,7 @@ const HISTORY_TICKS = 192;
  */
 export function WorldProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<Pick<Live, 'status' | 'risks' | 'proposals' | 'alerts' | 'snapshot'>>({ status: null, risks: [], proposals: [], alerts: [], snapshot: null });
+  const [anomalies, setAnomalies] = useState<Anomaly[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [lastOkAt, setLastOkAt] = useState<number | null>(null);
   const [streaming, setStreaming] = useState(false);
@@ -57,6 +60,10 @@ export function WorldProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     busy.current = true;
+    // On its own, not in the Promise.all below: a failure or a slow answer here must not hold back the live data.
+    get<Anomaly[]>('/anomalies')
+      .then((a) => setAnomalies(Array.isArray(a) ? a : []))
+      .catch(() => setAnomalies([]));
     try {
       const [status, risks, proposals, alerts, snapshot] = await Promise.all([
         get<Status>('/status'),
@@ -116,8 +123,8 @@ export function WorldProvider({ children }: { children: React.ReactNode }) {
   }, [refresh]);
 
   const value = useMemo<Live>(
-    () => ({ ...data, error, lastOkAt, streaming, history, selected, select, refresh: () => void refresh() }),
-    [data, error, lastOkAt, streaming, history, selected, refresh],
+    () => ({ ...data, anomalies, error, lastOkAt, streaming, history, selected, select, refresh: () => void refresh() }),
+    [data, anomalies, error, lastOkAt, streaming, history, selected, refresh],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
