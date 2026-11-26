@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Proposal, Route } from '@/lib/api';
+import type { Autopilot, Proposal, Route } from '@/lib/api';
 import { int, liters } from '@/lib/format';
 import { useLive } from '@/lib/world';
 import { useOperator } from '@/lib/operator';
@@ -26,6 +26,16 @@ function focusCard(id: number, tries = 12) {
   const el = document.getElementById(`proposal-${id}`);
   if (el) el.focus({ preventScroll: false });
   else if (tries > 0) setTimeout(() => focusCard(id, tries - 1), 100);
+}
+
+/** The guards the autopilot applies to one proposal (backend executor), said in words. They hold even while it is off. */
+function reviewReason(p: Proposal, total: number, ap: Autopilot | undefined): string | null {
+  if (!ap || p.status !== 'PROPOSED') return null;
+  if (p.confidence < ap.min_confidence)
+    return `Confidence ${p.confidence.toFixed(2)} is below ${ap.min_confidence.toFixed(2)}, so the autopilot will not approve this.`;
+  if (ap.enabled && total > ap.max_liters_per_proposal)
+    return `${liters(total)} is over the autopilot's limit of ${liters(ap.max_liters_per_proposal)} per proposal.`;
+  return null;
 }
 
 export default function ProposalQueue() {
@@ -145,6 +155,7 @@ export default function ProposalQueue() {
           view={x.v}
           ctx={ctx as Ctx}
           pairLevel={x.u.level}
+          review={reviewReason(x.p, x.v.total, status?.autopilot)}
           variant={variant}
           busy={busy[x.p.id]}
           override={!!overrides[x.p.id]}

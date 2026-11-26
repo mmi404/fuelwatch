@@ -44,6 +44,8 @@ export interface CardProps {
   /** The pair's current level from /api/risks, else the level on the card. */
   pairLevel: Proposal['explanation']['headline']['level'] | null;
   variant: 'open' | 'active';
+  /** Why the autopilot leaves this waiting proposal to a person, when it would. */
+  review: string | null;
   busy: Act | undefined;
   override: boolean;
   error: WriteError | undefined;
@@ -316,6 +318,12 @@ export function ProposalCard(props: CardProps) {
       </header>
 
       {variant === 'active' && <Outcome p={p} v={v} ctx={ctx} fresh={decided === 'approve'} />}
+
+      {variant === 'open' && props.review && (
+        <p className={s.review} role="note">
+          <strong>Human review requested.</strong> {props.review}
+        </p>
+      )}
 
       {variant === 'open' && collapsed && (
         <>
