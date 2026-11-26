@@ -104,7 +104,7 @@ export default function DisruptionTimeline() {
   const nowTick = world.instance.tick;
   const tickMin = world.instance.tick_minutes;
 
-  const end = Math.max(nowTick + 24, ...events.map((e) => e.end_tick), ...arrivals.map(arrivalTick)) + 2;
+  const end = Math.max(nowTick + 24, ...events.map((e) => e.end_tick + 1), ...arrivals.map(arrivalTick)) + 2;
   const inner = Math.max(1, width - PAD_L - PAD_R);
   const x = (t: number) => PAD_L + (Math.min(Math.max(t, 0), end) / end) * inner;
   const maxChars = Math.floor(inner / CHAR_W);
@@ -119,7 +119,7 @@ export default function DisruptionTimeline() {
 
   const count = (st: string) => arrivals.filter((a) => a.status === st).length;
   const length = (e: SimEvent) => {
-    const hours = ((e.end_tick - e.start_tick) * tickMin) / 60;
+    const hours = ((e.end_tick + 1 - e.start_tick) * tickMin) / 60;
     return hours < 1 ? `${Math.round(hours * 60)} min` : `${Number(hours.toFixed(1))} h`;
   };
   const eventLine = (e: SimEvent) => `${describeEvent(e, names)}. ${statusWord(e.status)}, ticks ${e.start_tick} to ${e.end_tick} (${length(e)}).`;
@@ -182,7 +182,7 @@ export default function DisruptionTimeline() {
               {events.map((e, i) => {
                 const y0 = TOP + LANE_HEAD + i * EVENT_ROW;
                 const x1 = x(e.start_tick);
-                const x2 = Math.max(x(e.end_tick), x1 + 4);
+                const x2 = Math.max(x(e.end_tick + 1), x1 + 4);
                 const kind = kindOf(e.status);
                 const text = fit(`${describeEvent(e, names)} · ${statusWord(e.status)}`, maxChars);
                 const rightAlign = x1 + text.length * CHAR_W > width - PAD_R;

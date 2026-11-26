@@ -248,13 +248,13 @@ export default function HeroStrip() {
                   <LevelGlyph level={c.tone} size={14} />
                   <span className={s.causeText}>
                     <span className={s.causeTitle}>
-                      {c.title}, {c.pairs} {c.pairs === 1 ? 'pair' : 'pairs'}
+                      {c.title}, reaches {c.pairs} {c.pairs === 1 ? 'pair' : 'pairs'}
                     </span>
                     <span className={`${s.note} mono`}>{c.meta}</span>
                   </span>
                 </li>
               ))}
-              {more > 0 && <li className={s.more}>+{more} more, {causes.slice(MAX_CAUSES).reduce((a, c) => a + c.pairs, 0)} pairs</li>}
+              {more > 0 && <li className={s.more}>+{more} more</li>}
             </ul>
           )}
         </div>

@@ -66,7 +66,8 @@ const strs = (p: Record<string, unknown>, k: string): string[] | null => {
 };
 const num = (p: Record<string, unknown>, k: string): number | null => (typeof p[k] === 'number' ? (p[k] as number) : null);
 
-const isActive = (e: SimEvent, tick: number) => e.status === 'ACTIVE' || (e.status !== 'RESOLVED' && e.start_tick <= tick && tick <= e.end_tick);
+/** As on the network map: a SCHEDULED event has changed nothing yet, even once its start tick is reached. */
+const isActive = (e: SimEvent) => e.status === 'ACTIVE';
 
 const clock = (simTime: string, nowTick: number, tick: number, tm: number): string | null => {
   const d = new Date(simTime.endsWith('Z') ? simTime : `${simTime}Z`);
@@ -116,9 +117,9 @@ export function buildCauses(snapshot: Snapshot, alerts: Alert[], tick: number, t
   for (const d of w.depots) if (!isOperatorOpen(d.status)) depotCause(d.id, d.status, null);
 
   for (const e of w.events) {
-    if (!isActive(e, tick)) continue;
+    if (!isActive(e)) continue;
     const p = e.parameters ?? {};
-    const end = clock(w.instance.sim_time, tick, e.end_tick + 1, tm);
+    const end = clock(w.instance.sim_time, w.instance.tick, e.end_tick + 1, tm);
     const window = `${end ? `until ${end}, ` : ''}${leftText(Math.max(0, ((e.end_tick + 1 - tick) * tm) / 60))} left`;
     switch (e.type) {
       case 'route_disruption':

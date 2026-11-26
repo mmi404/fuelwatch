@@ -235,7 +235,7 @@ interface Closable { id: string; name: string; status: string; down: boolean }
 export function disruptionList(world: World, nameOf: (id: string) => string): string[] {
   const { tick, tick_minutes: tm, sim_time: simTime } = world.instance;
   const active = activeEvents(world.events);
-  const until = (e: SimEvent) => `until ${tickClock(simTime, tick, e.end_tick, tm)}`;
+  const until = (e: SimEvent) => `until ${tickClock(simTime, tick, e.end_tick + 1, tm)}`;
   const eventName = (e: SimEvent) => e.type.replace(/_/g, ' ').toLowerCase();
 
   // The event types that change a status, the parameter naming what they change, and how a changed node reads.

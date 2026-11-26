@@ -113,7 +113,7 @@ export default function AlertFeed() {
             <span className={`${css.name}${item.kind === 'cause' ? ` ${css.nameWrap}` : ''}`} title={item.kind === 'station' ? item.station.name : undefined}>{name}</span>
             <span className={`${css.when} num`}>
               {item.kind === 'cause' ? plural(item.cause.alerts.length, 'pair') : coverText(item.station.hours)}
-              <span className="unit">{item.kind === 'cause' ? 'affected' : 'cautious'}</span>
+              <span className="unit">{item.kind === 'cause' ? 'on alert' : 'cautious'}</span>
             </span>
           </span>
           {item.kind === 'cause' ? <CauseBody cause={item.cause} /> : <StationBody station={item.station} tm={tm} tick={tick} />}

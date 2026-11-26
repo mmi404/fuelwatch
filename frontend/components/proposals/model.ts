@@ -221,7 +221,7 @@ export function evidence(v: CardView, clock: (tick: number) => string): Evidence
   if (v.binding.length) out.push({ key: 'binding', prio: 2, text: `Sized by ${v.binding.map(bindingLabel).join(', ')}` });
   for (const e of v.events) {
     const label = EVENT[e.type] ?? e.type.toLowerCase().replace(/_/g, ' ');
-    out.push({ key: `ev-${e.type}-${e.startTick}`, prio: 3, text: e.endTick != null ? `${label} until ${clock(e.endTick)}` : label });
+    out.push({ key: `ev-${e.type}-${e.startTick}`, prio: 3, text: e.endTick != null ? `${label} until ${clock(e.endTick + 1)}` : label });
   }
   if (v.inventory != null && v.capacity) out.push({ key: 'stock', prio: 4, text: `Stock ${liters(v.inventory)} of ${liters(v.capacity)} (${pct(v.inventory / v.capacity, 0)})` });
   if (v.expectedDemand != null) out.push({ key: 'demand', prio: 5, text: `Demand until arrival ${liters(v.expectedDemand)} expected${v.p90Demand != null ? `, ${liters(v.p90Demand)} at P90` : ''}` });

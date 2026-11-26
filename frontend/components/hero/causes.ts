@@ -106,7 +106,7 @@ export function buildCauses(w: World, tick: number): Cause[] {
     const factor = number(p, 'factor');
     const delay = number(p, 'delay_ticks');
     const detail = [mult != null && `x${mult}`, factor != null && `${Math.round(factor * 100)}% of supply`, delay != null && `${int(delay)} ticks late`].filter(Boolean).join(', ');
-    const when = scheduled ? `starts in ${span(Math.max(0, e.start_tick - tick), tm)}` : `${span(Math.max(0, e.end_tick - tick), tm)} left`;
+    const when = scheduled ? `starts in ${span(Math.max(0, e.start_tick - tick), tm)}` : `${span(Math.max(0, e.end_tick + 1 - tick), tm)} left`;
     out.push({
       key: `event-${e.id}`,
       tone: scheduled ? 'WATCH' : e.type === 'route_disruption' || e.type === 'station_outage' ? 'OUTAGE' : 'WARNING',
