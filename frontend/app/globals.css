@@ -38,8 +38,8 @@
   --shadow-float: 0 6px 24px rgb(0 0 0 / 0.14), 0 0 0 1px var(--rule-strong);
 
   /* type */
-  --font-sans: var(--font-plex-sans), 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: var(--font-plex-mono), 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --font-sans: 'IBM Plex Sans', 'IBM Plex Sans Fallback', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'IBM Plex Mono Fallback', ui-monospace, 'Cascadia Mono', Consolas, monospace;
 
   /* rhythm */
   --r: 2px;

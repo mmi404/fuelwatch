@@ -1,11 +1,8 @@
 import type { Metadata, Viewport } from 'next';
-import { IBM_Plex_Mono, IBM_Plex_Sans } from 'next/font/google';
 import { Providers } from '@/components/shell/Providers';
 import { Shell } from '@/components/shell/Shell';
+import './fonts/fonts.css';
 import './globals.css';
-
-const sans = IBM_Plex_Sans({ subsets: ['latin'], weight: ['400', '500', '600'], display: 'swap', variable: '--font-plex-sans' });
-const mono = IBM_Plex_Mono({ subsets: ['latin'], weight: ['400', '500', '600'], display: 'swap', variable: '--font-plex-mono' });
 
 export const metadata: Metadata = {
   title: { default: 'FuelWatch dispatch board', template: '%s | FuelWatch' },
@@ -18,7 +15,7 @@ const bootstrap = `try{var d=document.documentElement,t=localStorage.getItem('fu
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: bootstrap }} />
       </head>

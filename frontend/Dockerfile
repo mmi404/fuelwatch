@@ -1,7 +1,8 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# The lock file fixes every version. Retries ride out a slow registry; audit and funding calls are not needed.
+RUN npm ci --no-audit --no-fund --fetch-retries=5
 COPY . .
 # Both values are fixed at build time: the /api rewrite is compiled into the server, and NEXT_PUBLIC_* values are
 # compiled into the JavaScript that every browser downloads.
