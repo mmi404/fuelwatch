@@ -129,6 +129,8 @@ Labels come only from fixed sets (endpoint names, outcome enums, station and fue
 | `fuelwatch_fuel_lost_litres_total` | counter | none | Litres sent minus litres received |
 | `fuelwatch_http_request_seconds` | histogram | `route` (the route template), `method`, `status_class` | Our own API latency (NFR-2). `/metrics` and the endless `/api/stream` are not timed |
 | `fuelwatch_ledger_errors_total` | counter | none | SQLite failures |
+| `fuelwatch_anomalies_open` | gauge | `kind` (`explained`, `unexplained`) | Stations with an open demand anomaly |
+| `fuelwatch_requests_shed_total` | counter | `priority` (`essential`, `optional`, `stream`) | Requests refused with 503 because of load (8.7). A series appears with its first refusal |
 
 ### Service level objectives
 
@@ -139,7 +141,7 @@ Labels come only from fixed sets (endpoint names, outcome enums, station and fue
 | Execution correctness | Duplicate allocations; proposals rejected with a rule 409 on a fresh snapshot | 0 duplicates; under 1% rule rejections |
 | Recovery | Time from fault clearing to `LIVE` | At most 10 s (NFR-4) |
 
-Alerts, in order of importance: breaker open for over 30 s; mode `STALE`; a fallback active for over 1 minute; stream stalled; forecast coverage outside 0.7 to 0.9; ledger errors above zero; an unexplained anomaly open. A burn-rate pair on the availability SLO (fast and slow window) is the standard form and is a stretch item.
+Alerts, in order of importance: breaker open for over 30 s; mode `STALE`; a fallback active for over 1 minute; stream stalled; forecast coverage outside 0.7 to 0.9; ledger errors above zero; an unexplained anomaly open; requests being shed (8.7). A burn-rate pair on the availability SLO (fast and slow window) is the standard form and is a stretch item.
 
 ### Structured logs
 
@@ -163,3 +165,26 @@ A health board (mode, breakers, snapshot age); simulator calls (rate, error rati
 | Chaos | Drills D1 to D12 |
 | Replay | Policies on identical replays, with a determinism hash |
 | Load | k6 open model (`constant-arrival-rate`, then `ramping-arrival-rate` to find the knee), aimed at our API only, repeated under a latency fault |
+
+## 8.7 Load shedding
+
+"API traffic increases significantly" is one of the surprise events. In the ramp that looked for the knee (`loadtest/results/20261126/`, run before shedding existed) no request failed, but the 95th percentile reached 23.5 s: every request joined a queue and the answers came too late to use. An overloaded backend now refuses low-priority work at once, with `503`, `Retry-After: 5` (the console's poll interval) and the usual error body with the code `OVERLOADED`.
+
+One counter holds the essential and optional requests in flight. A new request is admitted only while the counter is below the limit of its own class, so optional reads are refused first. The middleware pauses once after counting a request, so that requests that have arrived but not yet run are counted too; without this, reads answered from memory would never appear to overlap.
+
+| Class | Requests | Setting, default |
+|---|---|---|
+| Never refused, not counted | `/livez`, `/readyz`, `/metrics`; the four operator routes (approve, reject, autopilot `PUT`, simulator controls) | none |
+| Essential | `/api/status`, `/api/snapshot`, `/api/risks`, `/api/proposals` and one proposal, `/api/alerts`, `/api/anomalies`, `/api/health/components` | `SHED_ESSENTIAL_LIMIT`, 256 |
+| Optional | Every other request, including `/api/forecast`, `/api/allocations`, `/api/audit` and `GET /api/autopilot` | `SHED_OPTIONAL_LIMIT`, 128 |
+| Event stream | `/api/stream`, counted on its own | `SHED_STREAM_LIMIT`, 200 |
+
+*Table 8.2. A limit of 0 turns that limit off; set all three to 0 to turn shedding off.*
+
+The console applies its five main reads together or not at all, and hides the unusual-demand section when `/api/anomalies` fails, so all six are essential.
+
+**Why these defaults.** One tab has at most about 10 reads in flight (the five main reads, anomalies, the health board, and on some views allocations, audit or forecast), so 10 tabs asking at the same instant make about 100, below the lower limit. In the 200 requests per second run, which met its latency target, k6 used at most 21 virtual users of 4 requests each, so at most 84 requests were in flight. At about 200 requests per second, 128 to 256 requests in flight is roughly 0.6 to 1.3 s of queue. That last figure is an estimate: the limits have not been load tested.
+
+**What the console shows.** A refused main read leaves the last good data on screen with the error, the mode shows `DEGRADED`, and after 30 s without a good refresh `STALE`. The ledger, audit trail and forecast keep their last rows and show the error. The system health panel drops its report, shows the state as unknown and says the backend is busy. The one weak spot is `/api/anomalies`, which the console reads on its own: if it alone were refused at the essential limit, the unusual-demand section would be hidden, with no message, until the next good read. A refused event stream is not reopened by the browser, so that tab updates on its 5 s timer until it is reloaded.
+
+**Limits of this design.** The limit counts requests, not their cost. It does not limit one client more than another. The operator routes are exempt by method and path, before the token is checked, so a flood of unauthenticated writes is not shed (each is refused cheaply with `401`). Refused requests appear in `fuelwatch_http_request_seconds` under the route `unmatched` with status class `5xx`. `fuelwatch_requests_shed_total` counts them by class and drives the alert `FuelWatchSheddingLoad`.
