@@ -64,7 +64,7 @@ export interface ForecastRow { station_id: string; fuel_type: string; tick: numb
 export interface AuditRow { id: number; at: string; actor: string; action: string; entity: string; entity_id: string; detail: Record<string, unknown> }
 /** One row of GET /api/allocations: a ledger line plus the simulator's own record when it is in the snapshot. */
 export interface LedgerLine {
-  id: number; proposal_id: number; depot_id: string; route_id: string; fuel_type: string; proposed_quantity: number; executed_quantity: number | null;
+  id: number; proposal_id: number; depot_id: string; station_id: string; route_id: string; fuel_type: string; proposed_quantity: number; executed_quantity: number | null;
   status: string; failure_code: string | null; idempotency_key: string; snapshot_tick: number; policy: string; proposal_status: string; confidence: number;
   simulator: SimAllocation | null;
 }

@@ -1,0 +1,149 @@
+/* Ledger: what was sent and what happened to it. Hairlines, mono figures, shape and word for every status. */
+
+.page { display: grid; gap: var(--gap); padding: var(--gap); max-width: 1680px; margin: 0 auto; grid-template-columns: minmax(0, 1fr); }
+.page > * { min-width: 0; }
+
+/* ---------- shared: toolbar, filters, states ---------- */
+.toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  padding: 8px var(--pad); border-bottom: 1px solid var(--rule);
+}
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.fchip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 8px; cursor: pointer;
+  border: 1px solid var(--rule-strong); border-radius: var(--r); background: var(--surface); font-size: 12px;
+}
+.fchip:hover:not(:disabled) { background: var(--sunken); }
+.fchip:disabled { color: var(--ink-3); border-color: var(--rule); cursor: default; }
+.fchipOn, .fchipOn:hover:not(:disabled) { background: var(--accent-wash); border-color: var(--accent); }
+.select, .check { display: inline-flex; align-items: center; gap: 8px; min-height: 26px; font-size: 12px; }
+.check { cursor: pointer; }
+.check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+
+.empty { display: grid; gap: 6px; justify-items: start; padding: 20px var(--pad); }
+.emptyTitle { font-size: 14px; font-weight: 600; }
+.err {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px var(--pad); font-size: 12px;
+  border-bottom: 1px solid var(--rule); background: color-mix(in oklab, var(--warn) 9%, var(--surface));
+}
+.more { display: flex; align-items: center; gap: 12px; padding: 8px var(--pad); border-top: 1px solid var(--rule); font-size: 12px; }
+.skel { display: block; height: 10px; border-radius: var(--r); background: var(--rule); }
+
+/* a row that is new or changed status gets one accent bar while it flashes */
+.fresh { box-shadow: inset 2px 0 0 var(--accent); }
+
+/* ---------- in flight ---------- */
+.flight { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 32px; }
+.flightBig { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; }
+.bigFig { font-size: 28px; font-weight: 600; line-height: 1.1; }
+.bigUnit { color: var(--ink-2); margin-right: 8px; }
+.counts { display: flex; flex-wrap: wrap; }
+.count { display: grid; gap: 2px; padding: 0 16px; min-width: 96px; border-left: 1px solid var(--rule); }
+.count:first-child { border-left: 0; padding-left: 0; }
+.count dd { display: flex; align-items: baseline; gap: 8px; font-size: 18px; font-weight: 600; }
+.countL { font-size: 12px; font-weight: 400; color: var(--ink-2); white-space: nowrap; }
+.countZero dd { color: var(--ink-3); font-weight: 400; }
+
+/* ---------- shipment table ---------- */
+.tableWrap { container: ledger / inline-size; }
+.table td { padding-top: 5px; padding-bottom: 5px; vertical-align: middle; }
+.table th, .table td { padding-left: 10px; padding-right: 10px; }
+.skelRow:hover { background: transparent !important; }
+.row[data-open] { background: var(--sunken); }
+.expander {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 4px 0 0; cursor: pointer;
+  border: 0; background: transparent; font-size: 12px;
+}
+.expander svg { transition: transform 120ms var(--ease); }
+.chevOpen { transform: rotate(90deg); }
+.cTime { white-space: nowrap; }
+.cRoute { font-weight: 500; }
+.cLiters > span { display: block; }
+.clip, .reason { display: block; font-size: 11px; line-height: 15px; font-family: var(--font-sans); white-space: normal; }
+.clip { color: var(--warn); }
+.reason { color: var(--ink-2); }
+.cSim .mono { font-size: 12px; white-space: nowrap; }
+.cKey { white-space: nowrap; }
+
+.key { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.keyText { font-size: 12px; color: var(--ink-2); }
+.copy { min-width: 48px; }
+
+/* ---------- status stepper: four pips on a hairline and the current word ---------- */
+.stepper { display: inline-flex; align-items: center; gap: 8px; }
+.pips { display: inline-flex; align-items: center; }
+.pip { display: inline-flex; flex-direction: column; align-items: center; color: var(--ink-3); position: relative; }
+.pip + .pip { margin-left: 8px; }
+.pip + .pip::before { content: ''; position: absolute; top: 7px; right: 100%; width: 8px; height: 1px; background: var(--rule-strong); }
+.done { color: var(--ink-2); }
+.current { color: var(--ink); }
+.todo { color: var(--ink-3); }
+.pipWord { display: none; }
+.stamp { font: 600 11px/1 var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; }
+.stepperFull { align-items: flex-start; }
+.stepperFull .pip { min-width: 72px; gap: 4px; }
+.stepperFull .pip + .pip { margin-left: 0; }
+.stepperFull .pip + .pip::before { right: calc(50% + 9px); width: calc(100% - 18px); }
+.stepperFull .pipWord { display: block; font-size: 11px; white-space: nowrap; }
+.stepperFull .current .pipWord { font-weight: 600; }
+.stepperFull .stamp { display: none; }
+
+/* ---------- expanded row ---------- */
+.detailRow, .detailRow:hover { background: var(--sunken) !important; }
+.detailRow > td { white-space: normal; }
+.detail { display: grid; gap: 12px; padding: 8px 0 10px; }
+.detailMeaning { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px 20px; }
+.facts dd { overflow-wrap: anywhere; }
+.simBlock { display: grid; gap: 6px; padding-top: 8px; border-top: 1px solid var(--rule); }
+.fullKey { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+
+/* ---------- audit trail: a typed log ---------- */
+.log { font-family: var(--font-mono); font-size: 12px; max-height: 480px; overflow: auto; }
+.logDay { padding: 6px var(--pad) 2px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+.logRow {
+  display: grid; grid-template-columns: 52px 68px 96px minmax(0, 1fr) auto; gap: 2px 12px; align-items: baseline;
+  min-height: 24px; padding: 3px var(--pad); border-bottom: 1px solid var(--rule);
+}
+.logRow:last-child { border-bottom: 0; }
+.logId { text-align: right; }
+.logActor { white-space: nowrap; font-weight: 600; letter-spacing: 0.02em; }
+.logActor[data-actor='system'] { color: var(--ink-2); font-weight: 400; }
+.logText { font-family: var(--font-sans); font-size: 13px; overflow-wrap: anywhere; }
+.logEntity { white-space: nowrap; text-align: right; }
+
+/* ---------- narrow: each shipment line becomes a block of labelled values ---------- */
+@container ledger (max-width: 979px) {
+  .table, .table tbody { display: block; }
+  .table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .table tr.row {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 12px;
+    padding: 8px var(--pad); border-bottom: 1px solid var(--rule);
+  }
+  .table tr.row td { display: grid; gap: 2px; align-content: start; justify-items: start; height: auto; padding: 0; border: 0; text-align: left; white-space: normal; }
+  .table tr.row td::before { content: attr(data-label); font: 500 11px/14px var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+  .table tr.row td.cStatus, .table tr.row td.cRoute { grid-column: span 2; }
+  .table tr.row td.cKey { grid-column: 1 / -1; }
+  .table tr.detailRow, .table tr.detailRow > td { display: block; }
+  .table tr.skelRow { display: flex; gap: 12px; padding: 8px var(--pad); }
+  .table tr.skelRow td { display: block; border: 0; padding: 0; height: auto; }
+  .table tr.skelRow td:nth-child(n + 4) { display: none; }
+}
+
+@media (max-width: 899px) {
+  .logRow { grid-template-columns: auto auto 1fr; }
+  .logText { grid-column: 1 / -1; grid-row: 2; }
+  .logEntity { text-align: right; }
+}
+@media (max-width: 639px) {
+  .page { padding: 12px; gap: 12px; }
+  .count { min-width: 0; flex: 1 1 28%; padding: 4px 10px; }
+  .count:first-child { padding-left: 10px; }
+  .log { max-height: 65vh; }
+  .logEntity { display: none; }
+  .facts { grid-template-columns: 1fr; }
+  .stepperFull .pip { min-width: 62px; }
+}
+@media (forced-colors: active) {
+  .fchipOn { outline: 2px solid Highlight; outline-offset: -2px; }
+}

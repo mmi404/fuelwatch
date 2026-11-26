@@ -90,8 +90,8 @@ What was sent and what happened to it.
 | Part | Shows | Source |
 |---|---|---|
 | In-flight strip | Shipments on the road with progress and arrival tick | `/api/allocations` |
-| Shipment table | Proposed and executed litres, status steps from planned to arrived or failed, failure code, idempotency key with copy | `/api/allocations` |
-| Audit trail | Who did what and when, as a monospace log with paging | `/api/audit` |
+| Shipment table | Proposed and executed litres, status steps from sending to arrived or failed, failure code, idempotency key with copy. Lists the current simulator epoch only; lines that were never sent are not listed | `/api/allocations` |
+| Audit trail | Who did what and when, as a monospace log with paging. Kept across epochs | `/api/audit` |
 
 ### Scenario
 

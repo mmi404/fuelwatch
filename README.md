@@ -14,7 +14,8 @@ Built for the BUP CSE FEST 2026 hackathon on top of the organizer-provided BUP F
 |---|---|
 | Backend: ingest, resilience, forecast, stockout estimate, allocator chain, proposals, alerts, approval, execution, ledger, audit, autopilot, metrics, logs | Built, with unit tests |
 | Console: **Overview** (summary, cover board, pair detail, network, proposals, alerts) | Built |
-| Console: **Ledger**, **Scenario** and **Results** pages | Not built yet; the pages say so. The ledger, audit, autopilot and demo controls are available through the API |
+| Console: **Ledger** (shipments in flight, every shipment line, the audit trail) | Built |
+| Console: **Scenario** and **Results** pages | Not built yet; the pages say so. Autopilot and demo controls are available through the API |
 | Docker Compose stack, Grafana dashboard, k6 load test, replay benchmark, demo drill script | Built |
 | Anomaly detection, Prometheus alert rules, user accounts, load shedding, CI | Not built |
 
@@ -178,7 +179,7 @@ python ops/demo/drill.py reset
 curl -X POST http://localhost:8000/admin/run
 ```
 
-**1. Calm.** The network is healthy. After about 45 seconds (tick 44 or 45, mid-morning in simulated time) the first proposal appears, for Tongi diesel. Pause (`curl -X POST http://localhost:8000/admin/pause`), read the card, open the pair detail chart, then enter the token and **approve**. The shipment appears on the network map.
+**1. Calm.** The network is healthy. After about 45 seconds (tick 44 or 45, mid-morning in simulated time) the first proposal appears, for Tongi diesel. Pause (`curl -X POST http://localhost:8000/admin/pause`), read the card, open the pair detail chart, then enter the token and **approve**. The shipment appears on the network map, and the **Ledger** page shows it with its status, idempotency key and who approved it.
 
 **2. Crisis.** Schedule the simulator's `final_combined` events from the current tick, run for about 10 seconds, then pause.
 
