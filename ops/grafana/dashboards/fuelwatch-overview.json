@@ -556,6 +556,69 @@
     "defaults": {},
     "overrides": []
    }
+  },
+  {
+   "id": 17,
+   "title": "Firing alerts",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 34,
+    "w": 24,
+    "h": 4
+   },
+   "description": "Rules in ops/prometheus/alerts.yml. No notification is sent.",
+   "options": {
+    "textMode": "value_and_name",
+    "colorMode": "background",
+    "graphMode": "none",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "instant": true,
+     "range": false,
+     "legendFormat": "{{alertname}}",
+     "expr": "count by (alertname) (ALERTS{alertstate=\"firing\"}) or label_replace(vector(0), \"alertname\", \"No alerts firing\", \"\", \"\")"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "noValue": "0",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   }
   }
  ],
  "templating": {

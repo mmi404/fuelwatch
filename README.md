@@ -18,7 +18,8 @@ Built for the BUP CSE FEST 2026 hackathon on top of the organizer-provided BUP F
 | Console: **Scenario** (run, pause, step and reset the simulator, autopilot and its limits, disruption timeline, demo script) | Built |
 | Console: **Results** (replay benchmark: unmet litres and service level by policy, every measured figure, limits) | Built |
 | Docker Compose stack, Grafana dashboard, k6 load test, replay benchmark, demo drill script | Built |
-| Anomaly detection, Prometheus alert rules, user accounts, load shedding, CI | Not built |
+| Prometheus alert rules with unit tests, shown in Prometheus and Grafana (nothing sends notifications) | Built |
+| Anomaly detection, user accounts, load shedding, CI | Not built |
 
 The simulator's behaviour is documented in the [findings](docs/SIMULATOR_STATUS_FINDINGS.md). The whole system is designed in [docs/design](docs/design/README.md) (also as a [PDF](docs/design/FuelWatch-Engineering-Design.pdf)) and the console in [docs/frontend](docs/frontend/README.md). Those documents describe the design; this README says what exists.
 
@@ -153,7 +154,11 @@ Service level, the simulator's own metric. No run had a rejected POST, a failed 
 
 ## Observability
 
-Prometheus metrics for simulator calls, snapshot age and tick, health mode, breaker state, retries, stream state, stockout hours, forecast error and coverage, decisions, fallbacks, proposals, allocation outcomes and API latency. Labels are bounded sets only. A provisioned Grafana dashboard shows them. Logs are structured JSON with request ids. `/livez` and `/readyz` are separate, because the simulator's own health endpoint stays green during injected faults. There are **no alert rules**: the dashboard is for looking at, and nothing pages anyone.
+Prometheus metrics for simulator calls, snapshot age and tick, health mode, breaker state, retries, stream state, stockout hours, forecast error and coverage, decisions, fallbacks, proposals, allocation outcomes and API latency. Labels are bounded sets only. A provisioned Grafana dashboard shows them. Logs are structured JSON with request ids. `/livez` and `/readyz` are separate, because the simulator's own health endpoint stays green during injected faults. Seven alert rules in [ops/prometheus/alerts.yml](ops/prometheus/alerts.yml) cover: the backend down, a circuit breaker that has not closed, stale data, a fallback used, a stalled tick stream, forecast coverage outside 70% to 90%, and ledger errors. They show at http://localhost:9090/alerts and in a panel at the bottom of the Grafana dashboard. There is no Alertmanager, so **nothing sends a notification**. The rules have unit tests:
+
+```bash
+docker run --rm -v "$PWD/ops/prometheus:/rules:ro" -w /rules --entrypoint promtool prom/prometheus:v2.55.1 test rules alerts.test.yml
+```
 
 ## Load testing
 

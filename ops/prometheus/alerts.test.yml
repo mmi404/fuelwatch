@@ -1,0 +1,136 @@
+# Unit tests for alerts.yml. From the repository root:
+#   docker run --rm -v "$PWD/ops/prometheus:/rules:ro" -w /rules --entrypoint promtool prom/prometheus:v2.55.1 test rules alerts.test.yml
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 5s
+
+tests:
+  # A healthy system fires nothing.
+  - name: healthy
+    interval: 5s
+    input_series:
+      - series: 'up{job="fuelwatch-backend", instance="backend:8080"}'
+        values: '1x120'
+      - series: 'fuelwatch_breaker_state{breaker="read"}'
+        values: '0x120'
+      - series: 'fuelwatch_mode{mode="STALE"}'
+        values: '0x120'
+      - series: 'fuelwatch_stream_stalls_total'
+        values: '0x120'
+      - series: 'fuelwatch_ledger_errors_total'
+        values: '0x120'
+      - series: 'fuelwatch_forecast_interval_coverage'
+        values: '0.79x120'
+      - series: 'fuelwatch_snapshot_tick'
+        values: '200x120'
+    alert_rule_test:
+      - { eval_time: 9m, alertname: FuelWatchBackendDown, exp_alerts: [] }
+      - { eval_time: 9m, alertname: FuelWatchBreakerNotClosed, exp_alerts: [] }
+      - { eval_time: 9m, alertname: FuelWatchDataStale, exp_alerts: [] }
+      - { eval_time: 9m, alertname: FuelWatchFallbackUsed, exp_alerts: [] }
+      - { eval_time: 9m, alertname: FuelWatchTickStreamStalled, exp_alerts: [] }
+      - { eval_time: 9m, alertname: FuelWatchForecastCoverageOff, exp_alerts: [] }
+      - { eval_time: 9m, alertname: FuelWatchLedgerErrors, exp_alerts: [] }
+
+  # An outage: the breaker flips between open (2) and half-open (1), then closes again.
+  - name: outage and recovery
+    interval: 5s
+    input_series:
+      - series: 'fuelwatch_breaker_state{breaker="read"}'
+        values: '0 0 2 2 1 2 2 1 2 2 1 2 2 0 0 0 0'
+      - series: 'fuelwatch_mode{mode="STALE"}'
+        values: '0 0 0 0 0 1 1 1 1 1 1 1 1 0 0 0 0'
+    alert_rule_test:
+      - { eval_time: 30s, alertname: FuelWatchBreakerNotClosed, exp_alerts: [] }
+      - eval_time: 45s
+        alertname: FuelWatchBreakerNotClosed
+        exp_alerts:
+          - exp_labels: { severity: warning, breaker: read }
+            exp_annotations:
+              summary: The read circuit breaker has not closed for 30 s
+              description: Calls to the simulator keep failing. Check the simulator and the request outcome panel.
+      - { eval_time: 35s, alertname: FuelWatchDataStale, exp_alerts: [] }
+      - eval_time: 45s
+        alertname: FuelWatchDataStale
+        exp_alerts:
+          - exp_labels: { severity: critical, mode: STALE }
+            exp_annotations:
+              summary: The data is too old to act on
+              description: The mode has been STALE for 15 s. Shipments are held until fresh data arrives.
+      - { eval_time: 70s, alertname: FuelWatchBreakerNotClosed, exp_alerts: [] }
+      - { eval_time: 70s, alertname: FuelWatchDataStale, exp_alerts: [] }
+
+  - name: backend down
+    interval: 5s
+    input_series:
+      - series: 'up{job="fuelwatch-backend", instance="backend:8080"}'
+        values: '1 1 0x20'
+    alert_rule_test:
+      - { eval_time: 30s, alertname: FuelWatchBackendDown, exp_alerts: [] }
+      - eval_time: 50s
+        alertname: FuelWatchBackendDown
+        exp_alerts:
+          - exp_labels: { severity: critical, job: fuelwatch-backend, instance: "backend:8080" }
+            exp_annotations:
+              summary: The FuelWatch backend is not answering Prometheus
+              description: No metrics for 30 s. The console cannot show live data and nothing can be sent.
+
+  # The counter's series does not exist until the first fallback: that first one must still fire, and clear later.
+  - name: first fallback ever
+    interval: 5s
+    input_series:
+      - series: 'fuelwatch_fallback_activations_total{component="allocator", from="lp", to="greedy"}'
+        values: '_x24 1x180'
+    alert_rule_test:
+      - { eval_time: 1m, alertname: FuelWatchFallbackUsed, exp_alerts: [] }
+      - eval_time: 3m
+        alertname: FuelWatchFallbackUsed
+        exp_alerts:
+          - exp_labels: { severity: warning, component: allocator, from: lp, to: greedy }
+            exp_annotations:
+              summary: A fallback was used in the last five minutes (allocator)
+              description: A step failed and a simpler one answered. The backend log names the cause.
+      - { eval_time: 12m, alertname: FuelWatchFallbackUsed, exp_alerts: [] }
+
+  - name: a later stall and a ledger error
+    interval: 5s
+    input_series:
+      - series: 'fuelwatch_stream_stalls_total'
+        values: '0x12 1x100'
+      - series: 'fuelwatch_ledger_errors_total'
+        values: '0x12 1x100'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: FuelWatchTickStreamStalled
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: The simulator's tick stream stalled in the last five minutes
+              description: Polling carries on without the stream, so this costs only speed. Repeats are worth a look.
+      - eval_time: 2m
+        alertname: FuelWatchLedgerErrors
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: The shipment ledger failed to read or write in the last five minutes
+              description: The record of what was sent may be incomplete. Check the backend log and disk.
+      - { eval_time: 8m, alertname: FuelWatchTickStreamStalled, exp_alerts: [] }
+      - { eval_time: 8m, alertname: FuelWatchLedgerErrors, exp_alerts: [] }
+
+  - name: forecast coverage, ignored early and reported after a day of ticks
+    interval: 30s
+    input_series:
+      - series: 'fuelwatch_forecast_interval_coverage'
+        values: '0.55x40'
+      - series: 'fuelwatch_snapshot_tick'
+        values: '40x13 120x26'
+    alert_rule_test:
+      - { eval_time: 6m, alertname: FuelWatchForecastCoverageOff, exp_alerts: [] }
+      - eval_time: 18m
+        alertname: FuelWatchForecastCoverageOff
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: The forecast's 80% interval is holding a share outside 70% to 90%
+              description: The uncertainty bands are off, so read the cautious stockout times with care.

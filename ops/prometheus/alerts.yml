@@ -1,0 +1,74 @@
+# Alert rules for FuelWatch, following the list in docs/design/08-resilience-and-observability.md section 8.5.
+# Prometheus evaluates them and shows them at http://localhost:9090/alerts, and the Grafana dashboard lists the ones
+# that are firing. No Alertmanager is configured, so nothing sends a notification.
+# Unit tests: alerts.test.yml in this folder.
+groups:
+  - name: fuelwatch
+    interval: 5s
+    rules:
+      - alert: FuelWatchBackendDown
+        expr: up{job="fuelwatch-backend"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: The FuelWatch backend is not answering Prometheus
+          description: No metrics for 30 s. The console cannot show live data and nothing can be sent.
+
+      # HALF_OPEN (1) counts as well as OPEN (2): during an outage the breaker moves between the two every few
+      # seconds, so a rule on OPEN alone would keep restarting its timer.
+      - alert: FuelWatchBreakerNotClosed
+        expr: fuelwatch_breaker_state > 0
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: The {{ $labels.breaker }} circuit breaker has not closed for 30 s
+          description: Calls to the simulator keep failing. Check the simulator and the request outcome panel.
+
+      - alert: FuelWatchDataStale
+        expr: fuelwatch_mode{mode="STALE"} == 1
+        for: 15s
+        labels:
+          severity: critical
+        annotations:
+          summary: The data is too old to act on
+          description: The mode has been STALE for 15 s. Shipments are held until fresh data arrives.
+
+      # The first activation creates the series, and increase() cannot see the step from nothing to 1. The first half
+      # of the expression catches a series that did not exist five minutes ago.
+      - alert: FuelWatchFallbackUsed
+        expr: >-
+          (fuelwatch_fallback_activations_total > 0 unless fuelwatch_fallback_activations_total offset 5m)
+          or increase(fuelwatch_fallback_activations_total[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: A fallback was used in the last five minutes ({{ $labels.component }})
+          description: A step failed and a simpler one answered. The backend log names the cause.
+
+      - alert: FuelWatchTickStreamStalled
+        expr: increase(fuelwatch_stream_stalls_total[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: The simulator's tick stream stalled in the last five minutes
+          description: Polling carries on without the stream, so this costs only speed. Repeats are worth a look.
+
+      # Waits for a full simulated day of ticks: with only a few forecasts scored the share swings widely.
+      - alert: FuelWatchForecastCoverageOff
+        expr: (fuelwatch_forecast_interval_coverage < 0.7 or fuelwatch_forecast_interval_coverage > 0.9) and on() (fuelwatch_snapshot_tick >= 96)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: The forecast's 80% interval is holding a share outside 70% to 90%
+          description: The uncertainty bands are off, so read the cautious stockout times with care.
+
+      - alert: FuelWatchLedgerErrors
+        expr: increase(fuelwatch_ledger_errors_total[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: The shipment ledger failed to read or write in the last five minutes
+          description: The record of what was sent may be incomplete. Check the backend log and disk.
