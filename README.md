@@ -131,7 +131,7 @@ Four of the design rules, each earned from testing the simulator (evidence in [t
 - **Stockout estimate.** A tick-by-tick projection of stock with fuel already on the road added at its expected arrival, along the mean and the P90 demand paths.
 - **Optimizer.** A rolling-horizon linear program that minimises unmet litres, constrained like the simulator's own validation, committing only the first tick and re-solving on each snapshot. A greedy cover-based allocator is the fallback and a benchmark policy; simple rules sit behind it.
 - **Foresight about failure.** The optimizer reads scheduled events and avoids routes about to be disrupted, because a shipment that departs onto a closed route fails and the fuel is not returned.
-- **Honest uncertainty.** Every proposal carries a confidence score with reasons. The autopilot only approves above a minimum confidence; everything else waits for a person.
+- **Honest uncertainty.** Every proposal carries a confidence score with reasons. The autopilot only approves above a minimum confidence; everything else waits for a person, and a card below that minimum says that human review is requested and why.
 
 ### Proof, not claims
 
