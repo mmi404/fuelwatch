@@ -95,7 +95,7 @@ jobs:
       - name: Check the Alertmanager config
         run: |
           docker run --rm -v "$PWD/ops/alertmanager:/etc/alertmanager:ro" --entrypoint amtool \
-            prom/alertmanager:v0.27.0 check-config /etc/alertmanager/alertmanager.yml
+            prom/alertmanager:v0.28.1 check-config /etc/alertmanager/alertmanager.yml
 
       - name: The deploy script parses
         run: bash -n deploy/deploy.sh

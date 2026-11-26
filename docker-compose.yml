@@ -108,7 +108,7 @@ services:
   alertmanager:
     profiles: ["discord"]
     restart: unless-stopped
-    image: prom/alertmanager:v0.27.0
+    image: prom/alertmanager:v0.28.1
     environment:
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
     entrypoint: ["/bin/sh", "-c"]
