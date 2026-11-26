@@ -27,6 +27,7 @@ _ID_SEGMENT = re.compile(r"/\d+(?=/|$)")
 BREAKER_STATE = {"CLOSED": 0, "HALF_OPEN": 1, "OPEN": 2}
 STREAM_STATES = ("DISCONNECTED", "CONNECTING", "CONNECTED", "BACKOFF", "STALLED")
 MODES = ("STARTING", "LIVE", "DEGRADED", "STALE")
+ANOMALY_KINDS = ("explained", "unexplained")
 HORIZON_HOURS = 24.0  # reported when no stockout is projected within the 96-tick horizon
 
 
@@ -186,6 +187,10 @@ class _StateCollector:
                     continue
                 g.add_metric([a.station_id, a.fuel_type, "p50"], a.hours_p50 if a.hours_p50 is not None else HORIZON_HOURS)
                 g.add_metric([a.station_id, a.fuel_type, "p90"], a.hours_p90 if a.hours_p90 is not None else HORIZON_HOURS)
+            yield g
+            g = GaugeMetricFamily("fuelwatch_anomalies_open", "Stations with an open demand anomaly", labels=["kind"])
+            for kind in ANOMALY_KINDS:
+                g.add_metric([kind], sum(1 for a in intel.anomalies if a.kind == kind))
             yield g
             coverage = intel.forecaster.accuracy().get("coverage_80")
             g = GaugeMetricFamily("fuelwatch_forecast_interval_coverage", "Share of realised demand inside the 80% interval")

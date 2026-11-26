@@ -18,12 +18,15 @@ CONFIDENCE_HIGH, CONFIDENCE_MEDIUM = 0.8, 0.5
 _ARRIVAL_WINDOW = 48  # ticks of scheduled supply shown on the card
 
 
-def confidence(assessment: Assessment, snapshot: WorldSnapshot, accuracy: dict[str, object], fallback_from: str | None = None) -> tuple[float, str, list[str]]:
+def confidence(assessment: Assessment, snapshot: WorldSnapshot, accuracy: dict[str, object], fallback_from: str | None = None, anomaly: str | None = None) -> tuple[float, str, list[str]]:
     """Start at 1.0 and subtract the reductions of design 6.7 that apply."""
     score, reasons = 1.0, []
     if assessment.confidence != "normal":
         score -= 0.30
         reasons.append("less than one day of demand history for this station and fuel")
+    if anomaly:
+        score -= 0.20
+        reasons.append(f"unexplained demand anomaly at this station: {anomaly}")
     if snapshot.stale or not snapshot.consistent:
         score -= 0.20
         reasons.append("the snapshot is stale or was read while the tick moved")
@@ -72,6 +75,7 @@ def build_explanation(
     shortfalls: list[Shortfall],
     accuracy: dict[str, object],
     fallback_from: str | None = None,
+    anomaly: str | None = None,
 ) -> tuple[dict[str, object], float, float | None, float | None]:
     """The card, plus the confidence score and the risk before and after."""
     T = snapshot.tick
@@ -105,7 +109,7 @@ def build_explanation(
         alt = what_if(snapshot, forecaster, station.id, fuel, {T + r.transit_ticks: qty})
         alternatives.append({"option": "other_route", "route_id": r.id, "depot_id": r.source_depot_id, "liters": int(qty), "arrival_tick": T + r.transit_ticks, "outlook": _outlook(alt)})
 
-    score, level, reasons = confidence(assessment, snapshot, accuracy, fallback_from)
+    score, level, reasons = confidence(assessment, snapshot, accuracy, fallback_from, anomaly)
     cumulative = forecaster.cumulative(station, fuel, T, max(1, max((s.arrival_tick - T for s in shipments), default=1)), snapshot.tick_minutes, snapshot.events)
     to_arrival = cumulative[-1] if cumulative else None
     last_arrival = max((s.arrival_tick for s in shipments), default=T)

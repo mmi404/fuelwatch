@@ -55,7 +55,8 @@ class ProposalService:
 
     # -- proposals -----------------------------------------------------------------------
 
-    def sync(self, snapshot: WorldSnapshot, forecaster: DemandForecaster, assessments: list[Assessment], plan: Plan) -> dict[str, int]:
+    def sync(self, snapshot: WorldSnapshot, forecaster: DemandForecaster, assessments: list[Assessment], plan: Plan, unexplained: dict[str, str] | None = None) -> dict[str, int]:
+        """`unexplained` maps a station to its open unexplained demand anomaly, which lowers a new proposal's confidence."""
         epoch = self._world.epoch
         if epoch is None:
             return {}
@@ -91,7 +92,7 @@ class ProposalService:
                 counts["kept"] += 1
                 continue
             card, score, risk_before, risk_after = build_explanation(
-                snapshot, forecaster, by_pair[key], decisions.get(key), shipments, [f for f in plan.shortfalls if (f.station_id, f.fuel_type) == key], accuracy, plan.fallback_from
+                snapshot, forecaster, by_pair[key], decisions.get(key), shipments, [f for f in plan.shortfalls if (f.station_id, f.fuel_type) == key], accuracy, plan.fallback_from, (unexplained or {}).get(key[0])
             )
             pid = self._db.insert_proposal(
                 epoch_id=epoch.id,

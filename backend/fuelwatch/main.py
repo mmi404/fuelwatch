@@ -179,6 +179,11 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
         """One row per station and fuel, most urgent first."""
         return intel.risks()
 
+    @app.get("/api/anomalies")
+    async def api_anomalies() -> list[dict[str, Any]]:
+        """Demand anomalies open now (design 6.5), unexplained first."""
+        return intel.open_anomalies()
+
     @app.get("/api/forecast")
     async def api_forecast(station_id: str | None = None, fuel: str | None = None, ticks: int = 24) -> list[dict[str, Any]]:
         if not 1 <= ticks <= 96:

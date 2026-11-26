@@ -13,6 +13,7 @@ from dataclasses import asdict
 from typing import TYPE_CHECKING
 
 from .allocate import Plan
+from .anomaly import Anomaly, AnomalyDetector
 from .db import Database
 from .forecast import Z90, DemandForecaster, hour_of_day
 from .metrics import NOOP
@@ -37,6 +38,9 @@ class Intelligence:
         self.obs = NOOP
         self._world = world
         self.forecaster = forecaster or DemandForecaster()
+        self.detector = AnomalyDetector()
+        self.anomalies: tuple[Anomaly, ...] = ()
+        self.forecaster.on_station_tick = self._observe_demand
         self.assessments: tuple[Assessment, ...] = ()
         self.assessed_tick: int | None = None
         self.snapshot: WorldSnapshot | None = None
@@ -45,10 +49,25 @@ class Intelligence:
 
     def _on_reset(self, _: ResetEvent) -> None:
         self.forecaster.reset()
+        self.detector.reset()
+        self.anomalies = ()
         self.assessments = ()
         self.assessed_tick = None
         self.plan = None
         self.proposal_counts = {}
+
+    def _observe_demand(self, *args) -> None:
+        try:
+            self.detector.observe(*args)
+        except Exception:  # anomaly detection is optional: it must never stop the forecaster learning
+            log.exception("anomaly observation failed")
+
+    def _detect(self, snap: WorldSnapshot) -> None:
+        try:
+            self.anomalies = self.detector.evaluate(snap)
+        except Exception:  # no anomaly list is better than an old one, and nothing else depends on it
+            self.anomalies = ()
+            log.exception("anomaly detection failed")
 
     async def update(self, snap: WorldSnapshot) -> None:
         epoch = self._world.epoch
@@ -70,6 +89,7 @@ class Intelligence:
             self.last_error = repr(exc)
             log.exception("intelligence update failed")
             return
+        self._detect(snap)
         if self._proposals is None:
             return
         try:
@@ -85,7 +105,8 @@ class Intelligence:
     def _sync_proposals(self, snap: WorldSnapshot, assessments: list[Assessment], plan: Plan) -> dict[str, int]:
         assert self._proposals is not None
         self._proposals.sync_alerts(snap, assessments)
-        return self._proposals.sync(snap, self.forecaster, assessments, plan)
+        unexplained = {a.station_id: a.summary for a in self.anomalies if a.kind == "unexplained"}
+        return self._proposals.sync(snap, self.forecaster, assessments, plan, unexplained)
 
     def forecast_rows(self, station_id: str | None = None, fuel: str | None = None, ticks: int = 24) -> list[dict[str, object]]:
         """Per-tick demand forecast with a P10 to P90 band for the next `ticks` ticks."""
@@ -111,6 +132,9 @@ class Intelligence:
                     spread = Z90 * sigma * p50
                     rows.append({"station_id": station.id, "fuel_type": fuel_type.value, "tick": t, "hour": hour_of_day(t, snap.tick_minutes), "p10": max(0.0, p50 - spread), "p50": p50, "p90": p50 + spread})
         return rows
+
+    def open_anomalies(self) -> list[dict[str, object]]:
+        return [asdict(a) for a in self.anomalies]
 
     def risks(self) -> list[dict[str, object]]:
         return [asdict(a) for a in self.assessments]

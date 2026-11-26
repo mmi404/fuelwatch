@@ -140,6 +140,9 @@ class DemandForecaster:
         self._last_tick: dict[tuple[str, str], int] = {}  # newest tick learned per station and fuel
         self.trained_through = -1  # newest tick learned anywhere
         self.on_score: Callable[[float], None] | None = None  # told each one-step absolute percentage error
+        # Told each station tick's one-step figures, made before the tick was learned: (station, tick, parts, events),
+        # a part per fuel being (demand, forecast without spikes, spike multiplier, relative sigma).
+        self.on_station_tick: Callable[[Station, int, list[tuple[float, float, float, float]], Sequence[Event]], None] | None = None
 
     def reset(self) -> None:
         """Drop everything learned: called when the world is reset."""
@@ -170,6 +173,7 @@ class DemandForecaster:
         by_station = {s.id: s for s in stations}
         by_region = {r.id: r for r in regions}
         learned = 0
+        station_ticks: dict[tuple[int, str], list[tuple[float, float, float, float]]] = {}
         for station_id, fuel, tick, demand in sorted(rows, key=lambda r: r[2]):
             station = by_station.get(station_id)
             if station is None or tick <= self.trained_through_for(station_id, fuel):
@@ -181,6 +185,9 @@ class DemandForecaster:
 
             # One-step-ahead check before learning this tick.
             predicted = series.level(hour)
+            if predicted is not None and self.on_station_tick is not None:
+                rel = math.sqrt(series.sigma() ** 2 + series.eps_level() ** 2)
+                station_ticks.setdefault((tick, station_id), []).append((demand, predicted * series.a, m, rel))
             if predicted is not None and demand > 0:
                 base = predicted * m
                 forecast = base * series.a
@@ -203,6 +210,9 @@ class DemandForecaster:
             series.bin_sum[hour] += y
             self._last_tick[(station_id, fuel)] = tick
             learned += 1
+        if self.on_station_tick is not None:
+            for (tick, station_id), parts in station_ticks.items():  # filled in tick order
+                self.on_station_tick(by_station[station_id], tick, parts, events)
         if rows:
             self.trained_through = max(self.trained_through, max(r[2] for r in rows))
         return learned
