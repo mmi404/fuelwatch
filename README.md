@@ -144,7 +144,7 @@ Service level, the simulator's own metric. No run had a rejected POST, a failed 
 |---|---|
 | Added latency | The console keeps being answered from the cache (about 40 ms in a drill with a 1.5 s delay) |
 | Random errors | Retries each failed request up to twice with jitter, within a retry budget; never retries 404, 409 or 422. Measured: the simulator's error fault fails 24% of requests, so without retries 94% of world reads would fail |
-| Simulator unavailable | Mode turns DEGRADED, then STALE; the console keeps the last snapshot, dims it and shows its age; an approval is **held** and sent once the data is fresh again. In a drill: DEGRADED after 4 s, STALE after 14 s, LIVE 4 s after the fault cleared, and the held shipment sent itself |
+| Simulator unavailable | Mode turns DEGRADED, then STALE; the console keeps the last snapshot, dims it and shows its age; an approval is **held** and sent once the data is fresh again. In drills: DEGRADED within a few seconds, STALE after about 14 s, LIVE 3 to 4 s after clearing outages of 16, 40 and 55 s, and the held shipment sent itself |
 | Stale-data signal | Reads the simulator's stale header and turns DEGRADED |
 | Stream dropped or silently stalled | Polling does not depend on it; a watchdog reconnects and reads the world again |
 | Malformed fields | Rejects the payload and keeps the last good snapshot |
@@ -173,7 +173,7 @@ Measured on one laptop with every service on the same machine (Docker Desktop, 1
 | Plan endpoints (proposals, allocations, forecast) | 150 requests/s for 60 s | 14.0 ms | 162.4 ms | 270.5 ms | 0 of 9,000 |
 | Dashboard reads, simulator 1 s latency fault active | 200 requests/s for 60 s | 13.9 ms | 75.8 ms | 155.0 ms | 0 of 12,004 |
 
-The reads are served from the in-memory snapshot, so a slow simulator does not slow them. The ramp test shows the limit: this process keeps up to about 50 dashboard refreshes per second (200 requests per second). Beyond that, arrivals queue, latency climbs to seconds and, at the top of the ramp (up to 1,000 refreshes per second), the backend's own poller could not finish a world read inside its 5 second deadline: the mode went to STALE and the read breaker opened 5 times. It returned to LIVE about 20 seconds after the load ended. There is no load shedding or rate limit in front of the API yet, and the poller shares the event loop with the request handlers; both are known limits.
+The reads are served from the in-memory snapshot, so a slow simulator does not slow them. The ramp test shows the limit: this process keeps up to about 50 dashboard refreshes per second (200 requests per second). Beyond that, arrivals queue, latency climbs to seconds and, at the top of the ramp (up to 1,000 refreshes per second), the backend's own poller could not finish a world read inside its 5 second deadline: the mode went to STALE and the read breaker opened 5 times. It returned to LIVE about 20 seconds after the load ended (measured before the circuit breaker's retry wait was capped at 5 s). There is no load shedding or rate limit in front of the API yet, and the poller shares the event loop with the request handlers; both are known limits.
 
 ## Demo script (5 minutes)
 

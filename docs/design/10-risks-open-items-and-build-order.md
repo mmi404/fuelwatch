@@ -11,7 +11,7 @@ How much of this design exists is stated in the project README, which is the one
 | NFR-1 Snapshot age at most 2 s | Not measured; will be read from the snapshot-age metric during a run |
 | NFR-2 `/api/snapshot` p95 under 100 ms | Not measured |
 | NFR-3 At most 30 requests per second to the simulator | Calculated at about 22 (part 4.1); not measured |
-| NFR-4 Recovery within 10 s | Not measured; drill D4 times it |
+| NFR-4 Recovery within 10 s | Measured on one laptop: live again 2.7 to 3.7 s after clearing outages of 16, 40 and 55 s (up to 23.7 s before the breaker's cool-down was capped at 5 s) |
 | NFR-5 Zero duplicates and avoidable losses | Not measured |
 | NFR-6 Honest degraded state | Checked by the drill checklist |
 | NFR-7 Start in under 5 minutes | Not measured |
