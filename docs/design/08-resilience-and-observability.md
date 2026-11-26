@@ -176,13 +176,13 @@ One counter holds the essential and optional requests in flight. A new request i
 | Class | Requests | Setting, default |
 |---|---|---|
 | Never refused, not counted | `/livez`, `/readyz`, `/metrics`; the four operator routes (approve, reject, autopilot `PUT`, simulator controls) | none |
-| Essential | `/api/status`, `/api/snapshot`, `/api/risks`, `/api/proposals` and one proposal, `/api/alerts`, `/api/anomalies`, `/api/health/components` | `SHED_ESSENTIAL_LIMIT`, 256 |
+| Essential | `/api/status`, `/api/snapshot`, `/api/risks`, `/api/proposals` and one proposal, `/api/alerts`, `/api/anomalies`, `/api/delivery-checks`, `/api/health/components` | `SHED_ESSENTIAL_LIMIT`, 256 |
 | Optional | Every other request, including `/api/forecast`, `/api/allocations`, `/api/audit` and `GET /api/autopilot` | `SHED_OPTIONAL_LIMIT`, 128 |
 | Event stream | `/api/stream`, counted on its own | `SHED_STREAM_LIMIT`, 200 |
 
 *Table 8.2. A limit of 0 turns that limit off; set all three to 0 to turn shedding off.*
 
-The console applies its five main reads together or not at all, and hides the unusual-demand section when `/api/anomalies` fails, so all six are essential.
+The console applies its five main reads together or not at all, and hides the unusual-demand and delivery-problem sections when `/api/anomalies` or `/api/delivery-checks` fails, so all seven are essential.
 
 **Why these defaults.** One tab has at most about 10 reads in flight (the five main reads, anomalies, the health board, and on some views allocations, audit or forecast), so 10 tabs asking at the same instant make about 100, below the lower limit. In the 200 requests per second run, which met its latency target, k6 used at most 21 virtual users of 4 requests each, so at most 84 requests were in flight. At about 200 requests per second, 128 to 256 requests in flight is roughly 0.6 to 1.3 s of queue. That last figure is an estimate: the limits have not been load tested.
 
