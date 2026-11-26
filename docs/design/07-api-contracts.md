@@ -12,7 +12,7 @@ Two interfaces matter: the one FuelWatch **exposes** to its dashboard and to ope
 | Freshness | Every response about the world carries `meta.tick` and `meta.age_seconds`. |
 | Caching | `GET /api/snapshot` is served from memory. An `ETag` of `epoch-tick` allows `304` responses. |
 | Errors | `{"error": {"code": "...", "message": "...", "details": {...}}}` with a stable `code`. |
-| Authentication | None on read endpoints. Write and control endpoints require the header `X-Operator-Token`, a shared secret from the environment (`OPERATOR_TOKEN`). A wrong or missing header is `401 UNAUTHORIZED`; with no secret configured every such endpoint answers `503 OPERATOR_TOKEN_NOT_SET`, so the system fails closed. |
+| Authentication | None on read endpoints. Write and control endpoints require the header `X-Operator-Token`: the shared secret `OPERATOR_TOKEN`, or, when `ACCOUNTS` lists people (`name:role:key`), that person's own key, which switches the shared secret off. A wrong or missing header is `401 UNAUTHORIZED`; with neither configured every such endpoint answers `503 OPERATOR_TOKEN_NOT_SET`, so the system fails closed. Roles: `operator` approves and rejects; `supervisor` can also approve with `override_stale`, change the autopilot and use the simulator controls, and an operator who tries is answered `403 SUPERVISOR_REQUIRED`. The shared secret has the supervisor role. |
 | Idempotency | Approve and reject are idempotent: repeating them returns the current state, never a second action. |
 | Browser rule | The dashboard calls only this API. It never calls the simulator. |
 
@@ -29,6 +29,7 @@ Two interfaces matter: the one FuelWatch **exposes** to its dashboard and to ope
 | GET | `/api/forecast` | Demand forecast with P10, P50, P90, filterable by station and fuel | `200 [..]` | no |
 | GET | `/api/anomalies` | Demand anomalies open now, unexplained first: station, kind (`explained` or `unexplained`), direction, deviation, z, first and last flagged tick, summary | `200 [..]` | no |
 | GET | `/api/delivery-checks` | Late supply deliveries and fuel lost on arrival open now, overdue first: id, kind (`late_delivery` or `lost_fuel`), state (`overdue`, `arrived_late` or `lost`), place id and name, fuel, litres, ticks late (null for a loss), first and last tick, summary | `200 [..]` | no |
+| GET | `/api/me` | Whose key this is: `{name, role}`. The shared token answers `operator`, `supervisor` | `200`, `401`, `503` | yes |
 | GET | `/api/proposals` | Proposals of the current world, newest first, with lines and explanation cards. Query: `status` (comma list), `limit` 1 to 200 | `200 [..]` or `422` | no |
 | GET | `/api/proposals/{id}` | One proposal with lines and attempts | `200` or `404` | no |
 | GET | `/api/alerts` | Stockout alerts of the current world, newest first. Query: `state` (comma list of open, acknowledged, cleared) | `200 [..]` | no |

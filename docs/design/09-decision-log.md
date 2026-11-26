@@ -178,9 +178,10 @@ Status values: **Accepted** (in force), **Revised** (replaced the first plan), *
 | Context | The simulator has no authentication. Our write and control endpoints could change the simulation. |
 | Options | None; **a shared operator token for writes and controls, reads open**; full user accounts |
 | Decision | `X-Operator-Token` is required to approve, reject, change autopilot, and use the demo controls that proxy the simulator's run, pause, step and reset. The browser never calls the simulator. |
-| Why | Matches the risk: a demo environment with one role. The proxy keeps the one-way rule (the browser never touches the simulator) and lets the console offer run, pause and step, including pausing while a decision is made. |
+| Update | Optional personal accounts were added with two roles, `operator` and `supervisor` (part 7). They are keys listed in the environment: enough to name who acted and to limit who may override the safety gate, change the autopilot or drive the simulator, without a password store or sessions. The shared token remains the default, so the demo needs no setup. |
+| Why | Matches the risk: a demo environment. The proxy keeps the one-way rule (the browser never touches the simulator) and lets the console offer run, pause and step, including pausing while a decision is made. |
 | Cost | A secret in `.env`. |
-| Revisit if | Real multi-user use is wanted. |
+| Revisit if | People need to manage their own passwords, keys must expire, or the system leaves a trusted network: that calls for a real identity provider and HTTPS. |
 
 ## 9.2 What changed from the first plan
 

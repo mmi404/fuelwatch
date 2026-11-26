@@ -64,11 +64,26 @@ To change settings, copy [.env.example](.env.example) to `.env` and edit it.
 
 ### Security: what protects an approval
 
-One shared token, and nothing else. There are no user accounts, roles or sessions.
+By default, one shared token. For named people, set up **accounts** with two roles:
+
+| Action | `operator` | `supervisor` |
+|---|---|---|
+| Approve or reject a shipment | yes | yes |
+| Send while the data is not live (override the safety gate) | no | yes |
+| Change the autopilot | no | yes |
+| Run, pause, step or reset the simulator | no | yes |
+
+Add a line to `.env` and run `docker compose up -d --wait`. Each entry is `name:role:key`; the key is that person's password, so make a long random one (`openssl rand -hex 16`):
+
+```bash
+ACCOUNTS=rahim:operator:<random key>,nadia:supervisor:<another random key>
+```
+
+Each person types their key where the console asks for the operator token. The top bar then shows their name and role, the audit trail records them by name, and **the shared token stops working**. The server checks the role on every write. A wrong entry stops the backend from starting, and its log says which one. To revoke someone, remove the entry and run the same command.
 
 - The default token is public (it is in this file). Set your own `OPERATOR_TOKEN` before anyone you do not trust can reach the ports; Compose publishes them on all network interfaces.
 - The console does **not** ship the token to the browser. Setting `DASHBOARD_PREFILL_TOKEN` and rebuilding pre-fills it as a convenience, which puts it in the JavaScript every visitor downloads: anyone who can open the console could then approve shipments, reset the simulator or turn the autopilot on.
-- Per-user sign-in is the missing piece and is not built.
+- Accounts are keys read from `.env`, not a sign-in service: no passwords to change in the console, no expiry, no lock-out after wrong tries, and nothing encrypts the key in transit. Put HTTPS in front before using them over a network you do not trust.
 
 ## The problem
 
@@ -319,7 +334,7 @@ simulator/      Compose file for the provided simulator on its own
 
 ## Honest limitations
 
-- Approval is protected by one shared token. There are no user accounts, so the audit log cannot say which person approved something.
+- By default approval is protected by one shared token, so the audit log cannot say which person approved something. Optional accounts (see Security) add names and two roles, as keys in `.env` rather than a full sign-in system.
 - The forecaster is fitted to this simulator's demand generator. That is deliberate and documented, but it will not transfer to real data without refitting.
 - The simulator's `depot_constraint` event only changes a label and blocks nothing; we display and flag it but cannot make it bind.
 - The benchmark uses one seed and injects no faults.
