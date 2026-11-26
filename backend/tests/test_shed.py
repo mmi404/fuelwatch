@@ -96,7 +96,7 @@ def test_every_route_that_requires_the_operator_token_is_exempt():
     found = 0
     for route in make_app().routes:
         if isinstance(route, APIRoute) and any(d.call.__name__ == "require_operator" for d in route.dependant.dependencies):
-            for method in route.methods:
+            for method in route.methods - {"GET"}:  # GET /api/me only reads who a key belongs to
                 found += 1
                 assert classify(method, re.sub(r"\{\w+\}", "7", route.path)) == EXEMPT, f"{method} {route.path}"
     assert found == 4

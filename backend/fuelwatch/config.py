@@ -25,6 +25,9 @@ class Settings:
     ready_max_age: float = 15.0
     # Shared secret for write and control endpoints (header X-Operator-Token). Empty means they are all refused.
     operator_token: str = ""
+    # Personal accounts, "name:role:key,..." with the role operator or supervisor (fuelwatch/auth.py). When set, each
+    # action is recorded under its name and the shared token is off.
+    accounts: str = ""
     # Listen to the simulator's tick stream as an early-refresh hint. Off in the dataclass so unit tests stay quiet;
     # `from_env` turns it on unless STREAM_ENABLED says otherwise.
     stream_enabled: bool = False

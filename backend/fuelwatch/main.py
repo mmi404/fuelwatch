@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import hmac
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import asdict
@@ -16,6 +15,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .auth import SUPERVISOR, Account, identify, parse_accounts
 from .client import SimulatorClient
 from .db import Database
 from .config import Settings
@@ -64,6 +64,7 @@ SIM_ACTIONS = ("run", "pause", "step", "reset")
 
 def create_app(settings: Settings | None = None, client: SimulatorClient | None = None, db: Database | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
+    accounts = parse_accounts(settings.accounts)  # a mistake stops the start-up
     store = SnapshotStore()
     owns_client = client is None
     client = client or SimulatorClient(settings.simulator_url, settings=settings)
@@ -221,24 +222,38 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"no proposal {proposal_id}"})
         return found
 
-    def require_operator(x_operator_token: str | None = Header(default=None)) -> None:
-        """Write and control endpoints need the shared secret; with none configured they are all refused."""
-        if not settings.operator_token:
+    def require_operator(x_operator_token: str | None = Header(default=None)) -> Account:
+        """Write and control endpoints need the shared token or a personal key; with neither configured they are all refused."""
+        if not accounts and not settings.operator_token:
             raise HTTPException(status_code=503, detail={"code": "OPERATOR_TOKEN_NOT_SET", "message": "write endpoints are disabled until OPERATOR_TOKEN is set"})
-        if x_operator_token is None or not hmac.compare_digest(x_operator_token.encode(), settings.operator_token.encode()):
+        account = None if x_operator_token is None else identify(x_operator_token, accounts, settings.operator_token)
+        if account is None:
             raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "message": "missing or wrong X-Operator-Token"})
+        return account
 
-    @app.post("/api/proposals/{proposal_id}/approve", dependencies=[Depends(require_operator)])
-    async def api_approve(proposal_id: int, body: ApproveBody | None = None) -> dict[str, Any]:
+    def supervisors_only(account: Account, what: str) -> None:
+        if account.role != SUPERVISOR:
+            raise HTTPException(status_code=403, detail={"code": "SUPERVISOR_REQUIRED", "message": f"{what} needs a supervisor account"})
+
+    @app.get("/api/me")
+    async def api_me(account: Account = Depends(require_operator)) -> dict[str, str]:
+        """Whose key this is, so the console can show it."""
+        return {"name": account.name, "role": account.role}
+
+    @app.post("/api/proposals/{proposal_id}/approve")
+    async def api_approve(proposal_id: int, body: ApproveBody | None = None, account: Account = Depends(require_operator)) -> dict[str, Any]:
+        override = bool(body and body.override_stale)
+        if override:
+            supervisors_only(account, "sending on data that is not live")
         try:
-            return await executor.approve(proposal_id, override_stale=bool(body and body.override_stale))
+            return await executor.approve(proposal_id, override_stale=override, actor=account.name)
         except ApiError as exc:
             raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": exc.message}) from exc
 
-    @app.post("/api/proposals/{proposal_id}/reject", dependencies=[Depends(require_operator)])
-    async def api_reject(proposal_id: int) -> dict[str, Any]:
+    @app.post("/api/proposals/{proposal_id}/reject")
+    async def api_reject(proposal_id: int, account: Account = Depends(require_operator)) -> dict[str, Any]:
         try:
-            return await executor.reject(proposal_id)
+            return await executor.reject(proposal_id, actor=account.name)
         except ApiError as exc:
             raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": exc.message}) from exc
 
@@ -299,14 +314,16 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
     async def api_autopilot() -> dict[str, Any]:
         return asdict(executor.autopilot)
 
-    @app.put("/api/autopilot", dependencies=[Depends(require_operator)])
-    async def api_set_autopilot(body: AutopilotBody) -> dict[str, Any]:
+    @app.put("/api/autopilot")
+    async def api_set_autopilot(body: AutopilotBody, account: Account = Depends(require_operator)) -> dict[str, Any]:
+        supervisors_only(account, "changing the autopilot")
         changes = body.model_dump(exclude_none=True)
-        return asdict(executor.set_autopilot(changes))
+        return asdict(executor.set_autopilot(changes, actor=account.name))
 
-    @app.post("/api/sim/{action}", dependencies=[Depends(require_operator)])
-    async def api_sim(action: str) -> dict[str, Any]:
+    @app.post("/api/sim/{action}")
+    async def api_sim(action: str, account: Account = Depends(require_operator)) -> dict[str, Any]:
         """Demo controls: the browser never calls the simulator, so its run, pause, step and reset go through here."""
+        supervisors_only(account, "driving the simulator")
         if action not in SIM_ACTIONS:
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"unknown control {action!r}; use one of {', '.join(SIM_ACTIONS)}"})
         try:
@@ -315,7 +332,7 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
             raise HTTPException(status_code=503, detail={"code": "SIMULATOR_UNAVAILABLE", "message": str(exc)}) from exc
         except SimulatorError as exc:
             raise HTTPException(status_code=502, detail={"code": "SIMULATOR_ERROR", "message": str(exc)}) from exc
-        await asyncio.to_thread(db.audit, "operator", f"sim.{action}", "simulator", "simulator", {})
+        await asyncio.to_thread(db.audit, account.name, f"sim.{action}", "simulator", "simulator", {})
         poller.wake()  # read the new state now
         return {"ok": True, "action": action, "simulator": result}
 

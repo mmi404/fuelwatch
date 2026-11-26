@@ -34,6 +34,7 @@ _OPERATOR = (
 _ESSENTIAL = frozenset({
     "/api/status", "/api/snapshot", "/api/risks", "/api/proposals", "/api/alerts", "/api/anomalies", "/api/delivery-checks",
     "/api/health/components",  # our own health: needed most when the backend is struggling
+    "/api/me",  # who is signed in
 })
 _ONE_PROPOSAL = re.compile(r"/api/proposals/[^/]+")
 
