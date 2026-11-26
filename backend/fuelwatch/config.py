@@ -38,6 +38,14 @@ class Settings:
     # A whole world read that takes longer than this is abandoned: it would be too old to publish.
     world_deadline: float = 5.0
 
+    # Load shedding of our own API (design 8.7): most requests in flight before a new one is answered 503. Optional reads
+    # are refused first; probes, the metrics scrape and operator actions never are. A console tab has at most about 10
+    # reads in flight, so 128 leaves room for 10 tabs asking at the same instant, with some to spare. 0 turns a limit off.
+    shed_optional_limit: int = 128
+    shed_essential_limit: int = 256
+    # Most browser event streams open at once.
+    shed_stream_limit: int = 200
+
     # Retries: reads retry twice, writes (idempotent by key) up to three attempts in total.
     read_retries: int = 2
     read_backoff_base: float = 0.1

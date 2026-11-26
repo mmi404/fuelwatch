@@ -30,6 +30,7 @@ from . import logs
 from .metrics import CONTENT_TYPE, HttpTimingMiddleware, Observability
 from .poller import Poller
 from .proposals import ProposalService
+from .shed import LoadShedMiddleware
 from .snapshot import SnapshotStore
 from .status_board import StatusBoard
 from .world import WorldTracker
@@ -112,6 +113,8 @@ def create_app(settings: Settings | None = None, client: SimulatorClient | None 
     app.state.executor = executor
     app.state.bus = bus
     app.state.obs = obs
+    # Added first, so it runs inside the timing middleware: a refused request still gets a request id and is timed.
+    app.add_middleware(LoadShedMiddleware, optional_limit=settings.shed_optional_limit, essential_limit=settings.shed_essential_limit, stream_limit=settings.shed_stream_limit, error_body=error_body, obs=obs)
     app.add_middleware(HttpTimingMiddleware, obs=obs)
     app.state.listener = listener
     app.state.db = db

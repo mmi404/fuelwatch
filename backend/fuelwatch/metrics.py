@@ -28,6 +28,7 @@ BREAKER_STATE = {"CLOSED": 0, "HALF_OPEN": 1, "OPEN": 2}
 STREAM_STATES = ("DISCONNECTED", "CONNECTING", "CONNECTED", "BACKOFF", "STALLED")
 MODES = ("STARTING", "LIVE", "DEGRADED", "STALE")
 ANOMALY_KINDS = ("explained", "unexplained")
+SHED_PRIORITIES = ("essential", "optional", "stream")  # the classes of shed.py that can be refused
 HORIZON_HOURS = 24.0  # reported when no stockout is projected within the 96-tick horizon
 
 
@@ -52,6 +53,7 @@ class Observability:
         self._outcomes = Counter("fuelwatch_allocation_outcomes_total", "Allocation outcomes", ["outcome"], registry=r)
         self._ledger_errors = Counter("fuelwatch_ledger_errors_total", "Ledger (SQLite) failures", registry=r)
         self._http = Histogram("fuelwatch_http_request_seconds", "Our own API latency", ["route", "method", "status_class"], buckets=_LATENCY, registry=r)
+        self._shed = Counter("fuelwatch_requests_shed_total", "Requests to our API refused because of load", ["priority"], registry=r)
         self._bound: dict[str, Any] = {}
         r.register(_StateCollector(self))
         ProcessCollector(registry=r)  # process_cpu_seconds_total, process_resident_memory_bytes: from /proc, so Linux only
@@ -119,6 +121,10 @@ class Observability:
 
     def http(self, route: str, method: str, status: int, seconds: float) -> None:
         self._http.labels(route, method, f"{status // 100}xx").observe(seconds)
+
+    def shed(self, priority: str) -> None:
+        assert priority in SHED_PRIORITIES, priority
+        self._shed.labels(priority).inc()
 
     def exposition(self) -> bytes:
         return generate_latest(self.registry)

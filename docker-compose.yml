@@ -36,6 +36,9 @@ services:
       POLL_INTERVAL: ${POLL_INTERVAL:-0.5}
       REFRESH_MAX_AGE: ${REFRESH_MAX_AGE:-5}
       READY_MAX_AGE: ${READY_MAX_AGE:-15}
+      SHED_OPTIONAL_LIMIT: ${SHED_OPTIONAL_LIMIT:-128}
+      SHED_ESSENTIAL_LIMIT: ${SHED_ESSENTIAL_LIMIT:-256}
+      SHED_STREAM_LIMIT: ${SHED_STREAM_LIMIT:-200}
     volumes:
       - backend-data:/data
     depends_on:
