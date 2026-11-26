@@ -10,7 +10,7 @@ interface Operator {
   /** Whether the token dialog is open (the shell renders it). */
   askOpen: boolean;
   ask: (open: boolean) => void;
-  /** Last write error, shown inline by whoever started the write. 401 also opens the token dialog. */
+  /** Sends a write. The error is thrown for the caller to show inline; a 401 also opens the token dialog. */
   write: <T>(method: 'POST' | 'PUT', path: string, body?: unknown) => Promise<T>;
 }
 
@@ -49,7 +49,7 @@ export function OperatorProvider({ children }: { children: React.ReactNode }) {
       try {
         return await send<T>(method, path, token, body);
       } catch (e) {
-        if (e instanceof ApiError && (e.status === 401 || e.status === 503)) ask(true);
+        if (e instanceof ApiError && e.status === 401) ask(true); // a 503 is not about this token, so typing it again cannot help
         throw e;
       }
     },

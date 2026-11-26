@@ -15,7 +15,8 @@ Built for the BUP CSE FEST 2026 hackathon on top of the organizer-provided BUP F
 | Backend: ingest, resilience, forecast, stockout estimate, allocator chain, proposals, alerts, approval, execution, ledger, audit, autopilot, metrics, logs | Built, with unit tests |
 | Console: **Overview** (summary, cover board, pair detail, network, proposals, alerts) | Built |
 | Console: **Ledger** (shipments in flight, every shipment line, the audit trail) | Built |
-| Console: **Scenario** and **Results** pages | Not built yet; the pages say so. Autopilot and demo controls are available through the API |
+| Console: **Scenario** (run, pause, step and reset the simulator, autopilot and its limits, disruption timeline, demo script) | Built |
+| Console: **Results** page | Not built yet; the page says so |
 | Docker Compose stack, Grafana dashboard, k6 load test, replay benchmark, demo drill script | Built |
 | Anomaly detection, Prometheus alert rules, user accounts, load shedding, CI | Not built |
 
@@ -38,9 +39,9 @@ docker compose up -d --build
 | Grafana (read-only without signing in) | http://localhost:3001/d/fuelwatch-overview |
 | Prometheus | http://localhost:9090 |
 
-The simulator starts paused. Start and stop it with `curl -X POST http://localhost:8000/admin/run` and `.../admin/pause`.
+The simulator starts paused. Start and stop it on the console's **Scenario** page.
 
-**To approve or reject shipments** the console asks for the operator token. With no `.env`, it is `demo-token`.
+**To approve or reject shipments, drive the simulator or change the autopilot** the console asks for the operator token. With no `.env`, it is `demo-token`.
 
 If a port is already taken, or to change settings, copy [.env.example](.env.example) to `.env` and edit it. If you ran the simulator from `simulator/docker-compose.yml`, stop it first: it uses port 8000.
 
@@ -49,7 +50,7 @@ If a port is already taken, or to change settings, copy [.env.example](.env.exam
 One shared token, and nothing else. There are no user accounts, roles or sessions.
 
 - The default token is public (it is in this file). Set your own `OPERATOR_TOKEN` before anyone you do not trust can reach the ports; Compose publishes them on all network interfaces.
-- The console does **not** ship the token to the browser. Setting `DASHBOARD_PREFILL_TOKEN` and rebuilding pre-fills it as a convenience, which puts it in the JavaScript every visitor downloads: anyone who can open the console could then approve shipments.
+- The console does **not** ship the token to the browser. Setting `DASHBOARD_PREFILL_TOKEN` and rebuilding pre-fills it as a convenience, which puts it in the JavaScript every visitor downloads: anyone who can open the console could then approve shipments, reset the simulator or turn the autopilot on.
 - Per-user sign-in is the missing piece and is not built.
 
 ## The problem
@@ -170,23 +171,22 @@ The reads are served from the in-memory snapshot, so a slow simulator does not s
 
 ## Demo script (5 minutes)
 
-Open the console and Grafana side by side. Each step below was run against the Compose stack.
+Open the console and Grafana side by side. Each step below was run against the Compose stack. Run, pause, step and reset are on the console's **Scenario** page, which also has a short version of this script; the faults and disruptions come from `ops/demo/drill.py`, because the console cannot inject them.
 
 **0. Start clean**
 
 ```bash
-python ops/demo/drill.py reset
-curl -X POST http://localhost:8000/admin/run
+python ops/demo/drill.py reset      # clears injected faults and returns to tick 0
 ```
 
-**1. Calm.** The network is healthy. After about 45 seconds (tick 44 or 45, mid-morning in simulated time) the first proposal appears, for Tongi diesel. Pause (`curl -X POST http://localhost:8000/admin/pause`), read the card, open the pair detail chart, then enter the token and **approve**. The shipment appears on the network map, and the **Ledger** page shows it with its status, idempotency key and who approved it.
+On the **Scenario** page, enter the token and press **Run**.
 
-**2. Crisis.** Schedule the simulator's `final_combined` events from the current tick, run for about 10 seconds, then pause.
+**1. Calm.** The network is healthy. After about 45 seconds (tick 44 or 45, mid-morning in simulated time) the first proposal appears, for Tongi diesel. Press **Pause** on the Scenario page, go to the Overview, read the card, open the pair detail chart and **approve**. The shipment appears on the network map, and the **Ledger** page shows it with its status, idempotency key and who approved it.
+
+**2. Crisis.** Schedule the simulator's `final_combined` events from the current tick, press **Run**, wait about 10 seconds, then press **Pause**. The Scenario page's timeline shows each event as scheduled, active or ended.
 
 ```bash
 python ops/demo/drill.py crisis
-curl -X POST http://localhost:8000/admin/run
-curl -X POST http://localhost:8000/admin/pause
 ```
 
 A Dhaka demand spike, a delayed depot delivery and then a closed route (Gazipur to Mirpur) appear. Levels rise, new proposals replace old ones, and none uses the closed route.

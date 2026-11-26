@@ -99,10 +99,12 @@ Drives a demonstration with the controls that exist.
 
 | Part | Shows | Source or action |
 |---|---|---|
-| Simulator controls | Run, pause, step and reset; reset needs a second, deliberate step | `POST /api/sim/{action}` |
-| Autopilot | On or off, with its limits: minimum confidence, litres per proposal, litres per tick, proposals per tick | `GET` and `PUT /api/autopilot` |
-| Disruption timeline | Scheduled, active and ended events | snapshot |
+| Simulator controls | Run state, tick, simulated time, service level and unmet demand; run, pause, step and reset; reset needs a second, deliberate step | snapshot, `POST /api/sim/{action}` |
+| Autopilot | On or off, with its limits: minimum confidence, litres per proposal, litres per tick, proposals per tick. Turning it on needs a second step; turning it off does not | status, `PUT /api/autopilot` |
+| Disruption timeline | Scheduled, active and ended events and the planned supply arrivals per depot, as a chart over ticks and as lists | snapshot |
 | Demonstration script | The order of a short demonstration | static |
+
+A refused or unanswered command is explained in place. Simulator commands are sent only once, so after a timeout the page says the command may or may not have been applied. When the data is old, no control is ruled out because of the last known run state. The backend has no fault injection, so the page adds no disruptions.
 
 ### Results
 
