@@ -54,6 +54,7 @@ class Observability:
         self._ledger_errors = Counter("fuelwatch_ledger_errors_total", "Ledger (SQLite) failures", registry=r)
         self._http = Histogram("fuelwatch_http_request_seconds", "Our own API latency", ["route", "method", "status_class"], buckets=_LATENCY, registry=r)
         self._shed = Counter("fuelwatch_requests_shed_total", "Requests to our API refused because of load", ["priority"], registry=r)
+        self._invalid = Counter("fuelwatch_invalid_payloads_total", "Simulator responses rejected as unreadable or the wrong shape", ["endpoint"], registry=r)
         self._bound: dict[str, Any] = {}
         r.register(_StateCollector(self))
         ProcessCollector(registry=r)  # process_cpu_seconds_total, process_resident_memory_bytes: from /proc, so Linux only
@@ -121,6 +122,9 @@ class Observability:
 
     def http(self, route: str, method: str, status: int, seconds: float) -> None:
         self._http.labels(route, method, f"{status // 100}xx").observe(seconds)
+
+    def invalid_payload(self, endpoint: str) -> None:
+        self._invalid.labels(endpoint).inc()
 
     def shed(self, priority: str) -> None:
         assert priority in SHED_PRIORITIES, priority

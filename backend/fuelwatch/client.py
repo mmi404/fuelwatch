@@ -173,6 +173,7 @@ class SimulatorClient:
         try:
             return response.json(), stale
         except ValueError as exc:
+            self.obs.invalid_payload(endpoint_name(path))
             raise MalformedResponse(f"non-JSON body from {path}", status=response.status_code) from exc
 
     def _backoff(self, kind: str, attempt: int) -> float:
@@ -257,11 +258,12 @@ class SimulatorClient:
                 # that never finished must not leave a half-open probe stuck.
                 breaker.record_failure()
 
-    @staticmethod
-    def _parse(path: str, data: Any, tp: type[T] | Any) -> T:
+    def _parse(self, path: str, data: Any, tp: type[T] | Any) -> T:
         try:
             return TypeAdapter(tp).validate_python(data)
         except ValidationError as exc:
+            # The request itself was already counted as ok: only here is it known that its content is unusable.
+            self.obs.invalid_payload(endpoint_name(path))
             raise MalformedResponse(f"{path} did not match the expected shape: {exc.errors()[:2]}") from exc
 
     async def _get(self, path: str, tp: Any, **params: Any) -> tuple[Any, bool]:

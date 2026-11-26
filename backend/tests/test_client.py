@@ -11,6 +11,7 @@ from fuelwatch.errors import (
     SimulatorRejected,
     SimulatorUnavailable,
 )
+from fuelwatch.metrics import Observability
 from fuelwatch.models import AllocationRequest, FuelType
 
 from .conftest import FakeClock, Sleeps, make_world, transport_for
@@ -89,8 +90,11 @@ def test_malformed_payload_raises_malformed_response():
     world = make_world()
     world["/v1/instance"]["tick"] = "not-a-number"
     client = SimulatorClient("http://sim", transport=transport_for(world))
+    client.obs = obs = Observability()
     with pytest.raises(MalformedResponse):
         run(client.instance())
+    # The alert reads this counter: the request itself was answered, so only the payload count shows the rejection.
+    assert obs.registry.get_sample_value("fuelwatch_invalid_payloads_total", {"endpoint": "/v1/instance"}) == 1
 
 
 def test_create_allocation_sends_expected_body_and_parses_result():
