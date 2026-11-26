@@ -327,7 +327,8 @@ def test_probe_through_a_half_open_breaker_is_not_retried():
         run(client.instance())
     assert len(calls) == before + 1  # one probe, no retries
     assert client.breaker_states()["read"]["state"] == "OPEN"
-    assert client.breaker_states()["read"]["cooldown_seconds"] == 10.0
+    # the default cap equals the base cool-down, so recovery is noticed soon after even a long outage (NFR-4)
+    assert client.breaker_states()["read"]["cooldown_seconds"] == 5.0
 
 
 def test_default_24_percent_error_rate_does_not_open_the_breaker():

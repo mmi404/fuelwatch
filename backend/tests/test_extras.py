@@ -259,10 +259,11 @@ def test_a_connection_that_stays_open_but_sends_no_tick_events_is_declared_stall
             clock_value[0] += 4.0  # every look at the clock is four seconds later
             return clock_value[0]
 
-        sim.tick = 2
-        await rig.poll()
         listener = StreamListener(stream_client(handler), store, FakePoller(), stall_seconds=10.0, check_every=0.02, clock=clock, sleep=lambda s: asyncio.sleep(0))
         task = asyncio.create_task(listener.run())
+        await asyncio.sleep(0.2)  # connected, and it has seen tick 0
+        sim.tick = 2
+        await rig.poll()
         for _ in range(200):
             if listener.stalls:
                 break
@@ -273,3 +274,32 @@ def test_a_connection_that_stays_open_but_sends_no_tick_events_is_declared_stall
 
     listener = run(scenario())
     assert listener.stalls >= 1 and listener.connects >= 1
+
+
+def test_a_paused_simulator_that_has_sent_no_tick_event_is_not_stalled():
+    class Silent(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b": connected\n\n"
+            await asyncio.sleep(3600)
+
+    def handler(request):
+        return httpx.Response(200, stream=Silent(), headers={"content-type": "text/event-stream"})
+
+    async def scenario():
+        rig = Rig(ExecSim())
+        await rig.poll()  # a freshly started backend: one snapshot, the clock paused, no event yet
+        clock_value = [0.0]
+
+        def clock():
+            clock_value[0] += 4.0
+            return clock_value[0]
+
+        listener = StreamListener(stream_client(handler), rig.store, FakePoller(), stall_seconds=10.0, check_every=0.02, clock=clock, sleep=lambda s: asyncio.sleep(0))
+        task = asyncio.create_task(listener.run())
+        await asyncio.sleep(0.6)  # many checks, each seeming seconds apart
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        return listener
+
+    listener = run(scenario())
+    assert listener.stalls == 0 and listener.connects == 1

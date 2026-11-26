@@ -146,7 +146,7 @@ stateDiagram-v2
 | `CLOSED` to `OPEN` | 5 consecutive failed requests, or a failure rate of 50% or more over at least 10 requests in 30 s |
 | `OPEN` to `HALF_OPEN` | Cool-down of 5 s |
 | `HALF_OPEN` to `CLOSED` | 2 consecutive probes succeed |
-| `HALF_OPEN` to `OPEN` | Any probe fails; the cool-down doubles up to 30 s |
+| `HALF_OPEN` to `OPEN` | Any probe fails; the cool-down doubles up to its cap. The cap is 5 s by default, so it does not grow: with a 30 s cap a drill took about 24 s to recover, against a 10 s target (NFR-4) |
 
 Two rules keep the breaker honest. It counts requests after their retries, not attempts: retries already absorb a single failed attempt, and counting attempts opened the breaker during a live run at the simulator's default 24% error rate (`[live]`, 80 of 100 refreshes refused), which is exactly the fault the system must ride through. A probe is sent once and not retried, because its job is to find out whether the simulator is back, and a request cancelled before it finishes (for example by the world deadline) counts as a failure so it cannot leave a probe stuck.
 

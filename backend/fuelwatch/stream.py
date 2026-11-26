@@ -51,6 +51,7 @@ class StreamListener:
         self.last_event_tick: int | None = None
         self.last_error: str | None = None
         self._rest_tick: int | None = None
+        self._first_rest_tick: int | None = None  # the baseline until the first tick event arrives
         self._rest_changed_at = clock()
         self._last_tick_event_at = clock()
 
@@ -127,5 +128,10 @@ class StreamListener:
         now, snap = self._clock(), self._store.current
         if snap is not None and snap.tick != self._rest_tick:
             self._rest_tick, self._rest_changed_at = snap.tick, now
-        moved = snap is not None and (self.last_event_tick is None or snap.tick > self.last_event_tick)
+        if snap is not None and self._first_rest_tick is None:
+            self._first_rest_tick = snap.tick
+        # Stalled means the world advanced past what the stream reported. A paused simulator sends no tick event at all,
+        # so before the first event the tick must have advanced since it was first seen here.
+        known = self.last_event_tick if self.last_event_tick is not None else self._first_rest_tick
+        moved = snap is not None and known is not None and snap.tick > known
         return moved and now - self._rest_changed_at > self._stall_seconds and now - self._last_tick_event_at > self._stall_seconds

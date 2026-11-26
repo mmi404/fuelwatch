@@ -60,7 +60,10 @@ class Settings:
     breaker_min_calls: int = 10
     breaker_window: float = 30.0
     breaker_cooldown: float = 5.0
-    breaker_max_cooldown: float = 30.0
+    # A failed probe doubles the cool-down up to this cap. It equals the base by default, so it does not grow: the
+    # console must be live again within about 10 s of a fault clearing (NFR-4), and with a 30 s cap it took up to
+    # about 24 s in a drill. The cost is one probe every few seconds while the simulator is down.
+    breaker_max_cooldown: float = 5.0
     breaker_probes_needed: int = 2
 
     @classmethod
