@@ -27,11 +27,15 @@ The simulator's behaviour is documented in the [findings](docs/SIMULATOR_STATUS_
 
 ## Quick start
 
-Requirements: Docker with Compose, and Python 3 for the demo drill script. No `.env` file is needed.
+You need Git and Docker with Compose v2 (Docker Desktop includes both Docker and Compose). No `.env` file, Node or Python is needed to run the platform; only the demo drill script needs Python 3.
 
 ```bash
-docker compose up -d --build
+git clone https://github.com/mmi404/fuelwatch.git
+cd fuelwatch
+docker compose up -d --build --wait
 ```
+
+The last command returns once every service is up; then open the console. The first run needs the internet and takes several minutes, because it downloads the base images, the packages and the simulator image. Later runs reuse them. The build gets the same backend and console package versions every time ([constraints.txt](backend/constraints.txt), [package-lock.json](frontend/package-lock.json)) and downloads no fonts.
 
 | Service | URL |
 |---|---|
@@ -46,7 +50,14 @@ The simulator starts paused. Start and stop it on the console's **Scenario** pag
 
 **To approve or reject shipments, drive the simulator or change the autopilot** the console asks for the operator token. With no `.env`, it is `demo-token`.
 
-If a port is already taken, or to change settings, copy [.env.example](.env.example) to `.env` and edit it. If you ran the simulator from `simulator/docker-compose.yml`, stop it first: it uses port 8000.
+To change settings, copy [.env.example](.env.example) to `.env` and edit it.
+
+| What you see | What to do |
+|---|---|
+| `port is already allocated` | Another program has that port. A simulator started from `simulator/docker-compose.yml` uses 8000: stop it. Or set the matching `*_PORT` line in `.env` (see the end of `.env.example`) |
+| The build stops moving, or a download fails | Press Ctrl+C and run the same command again. Finished steps are cached |
+| `--wait` reports an unhealthy service | `docker compose ps`, then `docker compose logs backend` (or the service it names) |
+| You want a clean start | `docker compose down -v` removes the containers **and the saved data** |
 
 ### Security: what protects an approval
 
