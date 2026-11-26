@@ -13,7 +13,7 @@ services:
       TICK_MINUTES: ${TICK_MINUTES:-15}
       SIMULATOR_START_MODE: ${SIMULATOR_START_MODE:-paused}
     ports:
-      - "${SIMULATOR_PORT:-8000}:8000"
+      - "${BIND_ADDRESS:-0.0.0.0}:${SIMULATOR_PORT:-8000}:8000"
 
   simulator-bench:
     profiles: ["bench"]
@@ -23,7 +23,7 @@ services:
       TICK_MINUTES: ${TICK_MINUTES:-15}
       SIMULATOR_START_MODE: paused
     ports:
-      - "${BENCH_SIMULATOR_PORT:-8001}:8000"
+      - "${BIND_ADDRESS:-0.0.0.0}:${BENCH_SIMULATOR_PORT:-8001}:8000"
 
   backend:
     restart: unless-stopped
@@ -45,7 +45,7 @@ services:
     depends_on:
       - simulator
     ports:
-      - "${BACKEND_PORT:-8080}:8080"
+      - "${BIND_ADDRESS:-0.0.0.0}:${BACKEND_PORT:-8080}:8080"
 
   frontend:
     restart: unless-stopped
@@ -59,7 +59,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "${FRONTEND_BIND_ADDRESS:-0.0.0.0}:${FRONTEND_PORT:-3000}:3000"
 
   prometheus:
     restart: unless-stopped
@@ -72,7 +72,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "${PROMETHEUS_PORT:-9090}:9090"
+      - "${BIND_ADDRESS:-0.0.0.0}:${PROMETHEUS_PORT:-9090}:9090"
     healthcheck: # lets `up --wait` return only once the page answers
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
       interval: 5s
@@ -96,7 +96,7 @@ services:
     depends_on:
       - prometheus
     ports:
-      - "${GRAFANA_PORT:-3001}:3000"
+      - "${BIND_ADDRESS:-0.0.0.0}:${GRAFANA_PORT:-3001}:3000"
     healthcheck: # lets `up --wait` return only once the page answers
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
       interval: 5s

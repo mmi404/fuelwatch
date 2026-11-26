@@ -81,7 +81,7 @@ ACCOUNTS=rahim:operator:<random key>,nadia:supervisor:<another random key>
 
 Each person types their key where the console asks for the operator token. The top bar then shows their name and role, the audit trail records them by name, and **the shared token stops working**. The server checks the role on every write. A wrong entry stops the backend from starting, and its log says which one. To revoke someone, remove the entry and run the same command.
 
-- The default token is public (it is in this file). Set your own `OPERATOR_TOKEN` before anyone you do not trust can reach the ports; Compose publishes them on all network interfaces.
+- The default token is public (it is in this file). Set your own `OPERATOR_TOKEN` before anyone you do not trust can reach the ports; Compose publishes them on all network interfaces unless you set `BIND_ADDRESS` ([.env.example](.env.example)).
 - The console does **not** ship the token to the browser. Setting `DASHBOARD_PREFILL_TOKEN` and rebuilding pre-fills it as a convenience, which puts it in the JavaScript every visitor downloads: anyone who can open the console could then approve shipments, reset the simulator or turn the autopilot on.
 - Accounts are keys read from `.env`, not a sign-in service: no passwords to change in the console, no expiry, no lock-out after wrong tries, and nothing encrypts the key in transit. Put HTTPS in front before using them over a network you do not trust.
 
@@ -104,6 +104,10 @@ Optional, about two minutes:
 After about 10 seconds it should appear in the channel. From then on the ten alert rules post there when they fire and again when they clear. If nothing arrives, read `docker compose logs alertmanager`. CI checks the Alertmanager config; **delivery to a real Discord channel has not been tested yet**, so the test message is your check.
 
 To switch it off, remove the two lines and run `docker compose --profile discord rm -sf alertmanager`.
+
+## Deploy to a VPS
+
+A push to `main` can build and restart the stack on your own server after CI passes. It is off until you add the server's details in GitHub. Follow [docs/DEPLOY.md](docs/DEPLOY.md). The SSH step has not been run against a real server yet.
 
 ## The problem
 

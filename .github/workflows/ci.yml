@@ -10,10 +10,11 @@ on:
 permissions:
   contents: read
 
-# A newer run for the same branch or pull request cancels the older one.
+# A newer run for the same branch or pull request cancels the older one, except on main: cancelling there could cut a
+# deployment off half way.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   backend:
@@ -96,6 +97,9 @@ jobs:
           docker run --rm -v "$PWD/ops/alertmanager:/etc/alertmanager:ro" --entrypoint amtool \
             prom/alertmanager:v0.27.0 check-config /etc/alertmanager/alertmanager.yml
 
+      - name: The deploy script parses
+        run: bash -n deploy/deploy.sh
+
       - name: Grafana dashboards are valid JSON
         run: |
           for file in ops/grafana/dashboards/*.json; do
@@ -168,3 +172,34 @@ jobs:
       - name: Stop the stack
         if: always()
         run: docker compose down -v
+
+  # Off until the repository variable DEPLOY_ENABLED is "true" (docs/DEPLOY.md). Runs only for a push to main, after
+  # every check above has passed, and deploys exactly the commit they checked.
+  deploy:
+    name: Deploy to the VPS
+    needs: [smoke]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    concurrency:
+      group: deploy-vps
+      cancel-in-progress: false
+    steps:
+      - name: Build and start on the server over SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ vars.VPS_PORT || '22' }}
+          VPS_PATH: ${{ vars.VPS_PATH || 'fuelwatch' }}
+        run: |
+          install -d -m 700 ~/.ssh
+          (umask 077; printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key)
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -p "$VPS_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=30 "$VPS_USER@$VPS_HOST" "cd '$VPS_PATH' && bash deploy/deploy.sh '$GITHUB_SHA'"
+
+      - name: Remove the key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

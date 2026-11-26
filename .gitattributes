@@ -2,3 +2,5 @@
 *.woff2 binary
 *.pdf binary
 *.png binary
+# Shell scripts run on Linux servers, where CRLF breaks them.
+*.sh text eol=lf
