@@ -1,4 +1,5 @@
-# FuelWatch stack. `docker compose up -d --build` starts the simulator, the backend, Prometheus and Grafana.
+# FuelWatch stack. `docker compose up -d --build` starts the simulator, the backend, the operator console (:3000),
+# Prometheus and Grafana.
 # Profiles: `bench` adds a second simulator on :8001 for the replay benchmark, `loadtest` runs k6.
 # Host ports can be moved with the *_PORT variables in .env (useful when something else already uses 8000).
 
@@ -6,7 +7,7 @@ services:
   simulator:
     image: asifmahmoud414/bup-fuel-supply-simulator:1.0.0
     environment:
-      SIMULATION_SPEED: ${SIMULATION_SPEED:-8}
+      SIMULATION_SPEED: ${SIMULATION_SPEED:-1}
       TICK_MINUTES: ${TICK_MINUTES:-15}
       SIMULATOR_START_MODE: ${SIMULATOR_START_MODE:-paused}
     ports:
@@ -16,7 +17,7 @@ services:
     profiles: ["bench"]
     image: asifmahmoud414/bup-fuel-supply-simulator:1.0.0
     environment:
-      SIMULATION_SPEED: ${SIMULATION_SPEED:-8}
+      SIMULATION_SPEED: ${SIMULATION_SPEED:-1}
       TICK_MINUTES: ${TICK_MINUTES:-15}
       SIMULATOR_START_MODE: paused
     ports:
@@ -38,6 +39,19 @@ services:
       - simulator
     ports:
       - "${BACKEND_PORT:-8080}:8080"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        BACKEND_URL: http://backend:8080
+        # Empty by default: the operator types the token into the console. A value here is shipped to every browser
+        # that opens the page, so anyone who can reach it could approve shipments.
+        PREFILL_TOKEN: ${DASHBOARD_PREFILL_TOKEN:-}
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
 
   prometheus:
     image: prom/prometheus:v2.55.1

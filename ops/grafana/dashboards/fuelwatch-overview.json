@@ -16,6 +16,7 @@
   {
    "id": 1,
    "title": "Health mode",
+   "options": {"textMode": "name", "graphMode": "none"},
    "type": "stat",
    "datasource": {
     "type": "prometheus",
@@ -31,6 +32,8 @@
     {
      "refId": "A",
      "expr": "fuelwatch_mode == 1",
+     "instant": true,
+     "range": false,
      "legendFormat": "{{mode}}",
      "datasource": {
       "type": "prometheus",
@@ -174,6 +177,7 @@
   {
    "id": 5,
    "title": "Tick stream state",
+   "options": {"textMode": "name", "graphMode": "none"},
    "type": "stat",
    "datasource": {
     "type": "prometheus",
@@ -189,6 +193,8 @@
     {
      "refId": "A",
      "expr": "fuelwatch_stream_state == 1",
+     "instant": true,
+     "range": false,
      "legendFormat": "{{state}}",
      "datasource": {
       "type": "prometheus",
