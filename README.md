@@ -20,9 +20,9 @@ Built for the BUP CSE FEST 2026 hackathon on top of the organizer-provided BUP F
 | Docker Compose stack, Grafana dashboard, k6 load test, replay benchmark, demo drill script | Built |
 | Prometheus alert rules with unit tests, shown in Prometheus and Grafana (nothing sends notifications) | Built |
 | CI with GitHub Actions: backend tests, console type check and build, monitoring config checks, a Compose start-up test | Added in `.github/workflows/ci.yml`; results are on the repository's Actions tab |
-| Unusual demand: marked explained or unexplained, shown in the alert feed, at `/api/anomalies`, as a metric and as an alert | Built, with unit tests and an offline replay; not yet drilled live |
-| Delivery checks: a supply delivery later than any announced delay explains, and a shipment that delivered less than was sent, in the alert feed and at `/api/delivery-checks` (no metric or alert) | Built, with unit tests; neither has been seen firing on the live simulator |
-| System health board: backend, database, simulator link, forecast, decision engine, tick stream and send gate, with p95 latency, error rate, CPU and memory. At `/api/health/components`, on the **Scenario** page, with CPU and memory also in Grafana | Built, with unit tests |
+| Unusual demand: marked explained or unexplained, shown in the alert feed, at `/api/anomalies`, as a metric and as an alert | Built, with unit tests and an offline replay. In a live run with a demand spike, two stations were flagged as explained within a few ticks; the unexplained case has not been seen live |
+| Delivery checks: a supply delivery later than any announced delay explains, and a shipment that delivered less than was sent, in the alert feed and at `/api/delivery-checks` (no metric or alert) | Built, with unit tests. A live run in which 74 shipments arrived raised no finding; neither check has been seen firing on the live simulator |
+| System health board: backend, database, simulator link, forecast, decision engine, tick stream and send gate, with p95 latency, error rate, CPU and memory. At `/api/health/components`, on the **Scenario** page, with CPU and memory also in Grafana | Built, with unit tests; checked on the running stack |
 | Load shedding: under too many requests at once, low-priority reads get `503` with `Retry-After`; health probes, metrics and operator actions are never refused | Built, with unit tests; one load ramp showed it does not keep latency low at this load (see Load testing) |
 | User accounts | Not built |
 
