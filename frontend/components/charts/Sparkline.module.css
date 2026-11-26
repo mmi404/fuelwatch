@@ -1,0 +1,12 @@
+.wrap { display: block; width: 100%; position: relative; }
+.svg { display: block; width: 100%; height: auto; overflow: visible; shape-rendering: geometricPrecision; cursor: crosshair; touch-action: none; }
+.line { fill: none; stroke: var(--ink-2); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.area { fill: color-mix(in oklab, var(--ink-2) 10%, transparent); stroke: none; }
+.cross { stroke: var(--rule-strong); stroke-width: 1; shape-rendering: crispEdges; }
+.dot { fill: var(--ink); stroke: var(--surface); stroke-width: 1.5; paint-order: stroke; }
+
+.ph {
+  display: flex; align-items: center; width: 100%;
+  font: 400 11px/1 var(--font-mono); color: var(--ink-3); letter-spacing: 0.02em;
+  border-bottom: 1px solid var(--rule); padding-bottom: 2px;
+}

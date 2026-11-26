@@ -1,0 +1,63 @@
+.sect { padding: 6px var(--pad) 4px; border-bottom: 1px solid var(--rule); background: var(--sunken); }
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  border-bottom: 1px solid var(--rule);
+}
+.row:hover { background: var(--sunken); }
+.row[data-selected] { background: var(--accent-wash); }
+.row[data-hidden] { opacity: 0.55; }
+
+.main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  min-height: var(--row);
+  padding: 8px 0 8px var(--pad);
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.main:focus-visible { outline-offset: -2px; }
+
+.line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.name { flex: 1 1 auto; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nameWrap { white-space: normal; overflow: visible; text-overflow: clip; }
+.when { flex: none; font-size: 13px; font-weight: 500; }
+
+.sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; font-size: 12px; color: var(--ink-2); }
+.age { flex: none; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+
+.fuels { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
+.fuelLevel { display: inline-flex; align-items: center; gap: 2px; }
+
+.cause { font-size: 12px; line-height: 1.4; color: var(--ink-2); }
+.cause :global(.label) { margin-right: 2px; }
+
+.scope { display: grid; gap: 2px; }
+.scopeItem { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.scopeName { flex: none; min-width: 72px; font-size: 12px; color: var(--ink-2); }
+
+.side { padding: 6px var(--pad) 0 4px; }
+
+.foot {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+  min-height: var(--row); padding: 6px var(--pad);
+}
+.hiddenNote { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; font-size: 12px; }
+
+.empty { display: grid; gap: 4px; padding: 16px var(--pad); }
+.okRow { display: inline-flex; align-items: center; gap: 8px; }
+.emptyHead { font-weight: 600; }
+
+.skel { display: grid; gap: 8px; padding: 12px var(--pad); border-bottom: 1px solid var(--rule); }
+.bar { display: block; height: 12px; border-radius: var(--r); background: var(--rule); animation: skelpulse 1.6s ease-in-out infinite; }
+@keyframes skelpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+@media (max-width: 639px) {
+  .scopeName { min-width: 64px; }
+}

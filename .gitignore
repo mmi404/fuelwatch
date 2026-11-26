@@ -1,19 +1,49 @@
 # Internal planning documents: never tracked
 plan/
 
-# Local environment and tooling
+# Local environment and secrets (the template .env.example stays tracked)
 .env
-*.log
+.env.*
+!.env.example
+
+# Editors, assistants and operating system files
 .vscode/
+.idea/
 .claude/
+.DS_Store
+Thumbs.db
+*.log
 
 # Python
 __pycache__/
 *.pyc
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 *.egg-info/
+build/
+dist/
 .venv/
+venv/
+
+# Local databases and runtime data (the backend keeps its SQLite file here)
 *.db
 *.db-wal
 *.db-shm
-data/
+/data/
+/backend/data/
+
+# Node and Next.js (package-lock.json stays tracked: the Docker build installs from it)
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+npm-debug.log*
+
+# Scratch output of local benchmark and load-test runs (saved results go under bench/results and loadtest/results)
+/scratch/
+/bench/scratch/
+/loadtest/scratch/

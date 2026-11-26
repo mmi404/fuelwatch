@@ -1,0 +1,19 @@
+.wrap { position: relative; width: 100%; min-width: 0; }
+.svg { display: block; width: 100%; height: 240px; overflow: visible; shape-rendering: geometricPrecision; touch-action: pan-y; border-radius: var(--r); }
+.svg text { font: 400 11px/1 var(--font-mono); fill: var(--ink-2); }
+.svg .axis text { fill: var(--ink-2); }
+.svg .strong { font-weight: 600; fill: var(--ink); }
+.svg .ref { fill: var(--ink-2); }
+
+.tip {
+  position: absolute; top: 28px; z-index: 2; pointer-events: none; min-width: 168px; max-width: 260px; padding: 6px 8px;
+  background: var(--raised); border: 1px solid var(--rule-strong); border-radius: var(--r); font-size: 12px; line-height: 1.4; color: var(--ink-2);
+}
+.tipHead { display: flex; gap: 8px; align-items: baseline; padding-bottom: 4px; margin-bottom: 4px; border-bottom: 1px solid var(--rule); }
+.tipTime { font: 600 12px/1.2 var(--font-mono); color: var(--ink); }
+.tipRow { display: flex; align-items: baseline; gap: 6px; }
+.tipValue { font: 600 12px/1.4 var(--font-mono); color: var(--ink); white-space: nowrap; }
+.key { flex: none; display: inline-block; width: 12px; height: 0; border-top: 2px solid var(--ink); align-self: center; }
+.exp { border-top-color: color-mix(in oklab, var(--ink) 50%, transparent); }
+.band { height: 8px; width: 12px; border: 1px solid var(--rule-strong); background: var(--band-outer); }
+.ship { height: 8px; border-top: 0; width: 8px; background: var(--ink); clip-path: polygon(50% 0, 100% 100%, 0 100%); }

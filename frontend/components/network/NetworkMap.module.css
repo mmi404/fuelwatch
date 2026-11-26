@@ -1,0 +1,130 @@
+/* Network schematic and depot x station matrix. Tokens only; colour is status, fuel or selection. */
+
+.diagram { padding: var(--pad) var(--pad) 0; min-width: 0; }
+.svg { width: 100%; height: auto; shape-rendering: geometricPrecision; overflow: visible; font-family: var(--font-sans); }
+.svg text { fill: var(--ink); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* edges */
+.edgeG, .node, .ship { transition: opacity 120ms var(--ease); }
+.svg .dim { opacity: 0.22; }
+.edge { fill: none; stroke: var(--rule-strong); stroke-linecap: butt; vector-effect: non-scaling-stroke; pointer-events: none; }
+.edgeHot { stroke: var(--ink-2); }
+.edgeClosed { stroke-dasharray: 7 5; opacity: 0.65; }
+.edgeDown { stroke-dasharray: 2 4; opacity: 0.75; }
+.edgeHit { fill: none; stroke: transparent; stroke-width: 16px; pointer-events: stroke; vector-effect: non-scaling-stroke; }
+
+.labelBg { fill: var(--surface); }
+.svg .edgeLabel { fill: var(--ink-2); font-family: var(--font-mono); }
+.stamp rect { fill: var(--surface); stroke: var(--crit); stroke-width: 1px; }
+.stamp path { fill: none; stroke: var(--crit); stroke-width: 1.75px; }
+.svg .stamp text { font: 600 11px var(--font-mono); letter-spacing: 0.02em; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
+
+.ruler line { stroke: var(--rule-strong); stroke-width: 1px; shape-rendering: crispEdges; vector-effect: non-scaling-stroke; }
+.svg .ruler text { fill: var(--ink-2); }
+
+/* nodes */
+.node { cursor: default; outline: none; }
+.station { cursor: pointer; }
+.nodeBox { fill: var(--surface); stroke: var(--rule-strong); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.node > .nodeBox[fill='none'] { fill: none; }
+.nodeHot .nodeBox { stroke: var(--ink-2); }
+.nodeSel .nodeBox { stroke: var(--accent); stroke-width: 2px; }
+.node:focus-visible .nodeBox { stroke: var(--accent); stroke-width: 2.5px; }
+.ring { fill: none; stroke: var(--crit); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+.hatch { opacity: 0.35; pointer-events: none; }
+.hatchLine { stroke: var(--outage); }
+.svg .nodeName { font-size: 12px; font-weight: 600; }
+.svg .sub { fill: var(--ink-2); }
+.svg .status { font-weight: 500; }
+.stampBg { fill: var(--surface); stroke: var(--outage); stroke-width: 1px; }
+.svg .stampText { font: 600 11px var(--font-mono); letter-spacing: 0.04em; }
+
+.fuelBox { fill: var(--surface); stroke-width: 1px; }
+.svg .fuelLetter { font: 600 11px var(--font-mono); }
+.track { fill: var(--sunken); stroke: var(--rule); stroke-width: 1px; }
+.fill { fill: var(--ink-3); }
+.svg .litres { opacity: 0; font-family: var(--font-mono); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }
+.node:hover .litres, .node:focus .litres { opacity: 1; }
+.tickHit { fill: transparent; }
+.tick:hover .tickHit { fill: var(--sunken); }
+
+/* shipments */
+.ship { pointer-events: none; }
+.marker { fill: var(--surface); stroke-width: 2px; }
+.ghost { fill: none; stroke-width: 1px; stroke-dasharray: 3 3; opacity: 0.8; }
+.leader { stroke: var(--ink-2); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.svg .markerLetter { font: 600 11px var(--font-mono); }
+.etaBg { fill: var(--surface); stroke: var(--rule-strong); stroke-width: 1px; }
+.svg .etaLabel { font-family: var(--font-mono); }
+
+/* banner, footer, legend */
+.banner {
+  display: flex; align-items: flex-start; gap: 8px; padding: 6px var(--pad);
+  border-bottom: 1px solid var(--rule); background: var(--sunken); font-size: 12px;
+}
+.banner svg { margin-top: 2px; }
+.banner strong { font-weight: 600; white-space: nowrap; }
+.foot { display: grid; gap: 6px; padding: 8px var(--pad) 10px; }
+.noShips { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 12px; }
+.noShips svg { flex: none; }
+.sampleLine { stroke: var(--rule-strong); stroke-width: 2px; }
+.sampleMarker { fill: var(--surface); stroke: var(--ink-3); stroke-width: 1px; stroke-dasharray: 3 3; }
+.shipList { display: grid; }
+.shipRow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: var(--row); font-size: 12px; border-bottom: 1px solid var(--rule); }
+.legend { display: flex; flex-wrap: wrap; gap: 2px 18px; color: var(--ink-2); font-size: 11px; line-height: 16px; }
+.legendItem { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+.widthSample { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); }
+.sampleWidth { stroke: var(--rule-strong); }
+
+/* matrix */
+.matrixWrap { border-top: 1px solid var(--rule); overflow-x: auto; }
+.matrix { table-layout: fixed; min-width: 300px; }
+.matrixCap { text-align: left; padding: 8px var(--pad) 4px; }
+.capNote { margin-left: 8px; font-size: 11px; color: var(--ink-2); }
+.corner { width: 18%; }
+.matrix th, .matrix td { border-bottom: 1px solid var(--rule); }
+.matrix tbody tr:last-child > * { border-bottom: 0; }
+.matrix thead th { padding: 0; border-bottom-color: var(--rule-strong); vertical-align: bottom; font-weight: 500; }
+.matrix tbody th { padding: 4px var(--pad); text-align: left; font-size: 12px; font-weight: 600; }
+.headBtn {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 1px; width: 100%; min-height: 36px; padding: 3px var(--pad);
+  border: 0; border-radius: var(--r); background: transparent; cursor: pointer; text-align: right;
+}
+.headBtn:disabled { cursor: default; }
+.headBtn:focus-visible { outline-offset: -2px; }
+.headName { font-size: 12px; font-weight: 600; max-width: 100%; overflow-wrap: anywhere; }
+.headWord { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--ink-2); }
+.rowName, .rowStatus { display: block; overflow-wrap: anywhere; }
+.rowStatus { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500; color: var(--ink-2); }
+.cell { height: var(--row); padding: 3px var(--pad); text-align: right; vertical-align: middle; font-family: var(--font-mono); }
+.cellMain, .cellSub { display: block; white-space: nowrap; line-height: 15px; }
+.cellMain { font-size: 12px; }
+.cellSub { font-size: 11px; color: var(--ink-2); }
+.struck .cellMain, .struck .cellSub { text-decoration: line-through; color: var(--ink-3); }
+.closedWord { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.none { color: var(--ink-3); }
+.matrix .hotRow > *, .matrix .hotCol, .matrix .hotHead { background: var(--sunken); }
+.matrix .hotCell { background: var(--sunken); box-shadow: inset 0 0 0 1px var(--ink-3); }
+
+/* first load and failure */
+.message { display: flex; gap: 8px; align-items: flex-start; min-height: 160px; color: var(--ink-2); }
+.skeleton { display: flex; justify-content: space-between; align-items: center; height: 368px; }
+.skelCol { display: grid; gap: 12px; width: 28%; }
+.skelDepot, .skelStation { display: block; border: 1px solid var(--rule); border-radius: var(--r); background: var(--sunken); }
+.skelDepot { height: 96px; }
+.skelStation { height: 72px; }
+
+@media (max-width: 639px) {
+  .matrix th .headBtn, .headBtn { padding: 3px 4px; }
+  .matrix tbody th { padding: 4px 4px 4px 8px; font-size: 11px; }
+  .headName { font-size: 11px; }
+  .cell { padding: 3px 4px; }
+  .cellMain { font-size: 11px; }
+  .corner { width: 20%; }
+  .rowStatus { overflow-wrap: normal; gap: 3px; }
+  .capNote { display: block; margin-left: 0; }
+}
+
+@media (forced-colors: active) {
+  .nodeBox, .edge, .marker, .etaBg { stroke: CanvasText; }
+}
